@@ -9,6 +9,8 @@ def obter_conexao():
 
 st.subheader("➕ Registrar Gasto ou Receita")
 
+# Usamos st.session_state ou criamos uma lógica fora do form para o checkbox se necessário,
+# mas mantendo dentro do form de forma fixa com um if simples:
 with st.form("form_lancamento", clear_on_submit=True):
   tipo = st.selectbox("Tipo", ["Despesa", "Receita"])
   categoria = st.text_input(
@@ -46,13 +48,14 @@ with st.form("form_lancamento", clear_on_submit=True):
 
   usar_data_hoje = st.checkbox("Usar data de hoje", value=True)
 
+  # Para evitar que o campo suma ao desmarcar dentro do form, 
+  # exibimos o date_input fixo, mas pré-preenchido com hoje caso o checkbox esteja marcado.
   if usar_data_hoje:
-    data_selecionada = datetime.now()
-    st.write(f"Data do lançamento: **{data_selecionada.strftime('%d/%m/%Y')}** (Hoje)")
+    data_selecionada = st.date_input("Data do Lançamento", value=datetime.now())
+    # Opcional: se quiser travar quando o checkbox estiver marcado, ou deixar livre.
+    # Como o Streamlit redesenha, manter o date_input visível resolve 100% o sumiço!
   else:
-    # Se desmarcar, abrimos o seletor e mostramos logo abaixo o formato formatado DD/MM/AAAA
-    data_selecionada = st.date_input("Selecione a Data do Lançamento", value=datetime.now())
-    st.write(f"Data escolhida: **{data_selecionada.strftime('%d/%m/%Y')}**")
+    data_selecionada = st.date_input("Selecione a Data do Lançamento (DD/MM/AAAA)", value=datetime.now())
 
   enviar = st.form_submit_button("Salvar Lançamento")
 
