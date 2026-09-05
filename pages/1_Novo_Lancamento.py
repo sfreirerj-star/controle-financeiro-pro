@@ -46,18 +46,19 @@ with st.form("form_lancamento", clear_on_submit=True):
 
   usar_data_hoje = st.checkbox("Usar data de hoje", value=True)
 
-  # Lógica correta para o checkbox: só exibe o calendário se desmarcar
+  # Lógica corrigida: 
+  # Se o checkbox estiver marcado, usa hoje. 
+  # Se estiver desmarcado, abre o calendário livre para qualquer data (passada ou futura).
   if usar_data_hoje:
     data_selecionada = datetime.now()
+    st.write(f"Data selecionada: **{data_selecionada.strftime('%d/%m/%Y')}** (Hoje)")
   else:
-    data_selecionada = st.date_input("Selecione a Data do Lançamento", value=datetime.now())
-    # Exibe visualmente a confirmação em formato brasileiro DD/MM/AAAA para você conferir
+    data_selecionada = st.date_input("Selecione a Data (Passada ou Futura)", value=datetime.now())
     st.write(f"Data selecionada: **{data_selecionada.strftime('%d/%m/%Y')}**")
 
   enviar = st.form_submit_button("Salvar Lançamento")
 
   if enviar:
-    # Formata rigorosamente para o padrão brasileiro DD/MM/AAAA antes de enviar ao banco
     data_formatada = data_selecionada.strftime("%d/%m/%Y")
 
     if categoria and valor_final > 0:
