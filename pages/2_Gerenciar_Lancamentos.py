@@ -8,11 +8,10 @@ st.set_page_config(page_title="Gerenciar Lançamentos", page_icon="✏️")
 def obter_conexao():
   return psycopg2.connect(st.secrets["DATABASE_URL"])
 
-st.subheader("✏️ Editar ou Excluir Lançamentos")
+st.subheader("✏️ Gerenciar, Editar ou Excluir Lançamentos")
 
 try:
   conexao = obter_conexao()
-  # Busca todos os lançamentos sem restrição de data (traz passados, presentes e futuros)
   df = pd.read_sql_query(
       "SELECT id, data, tipo, categoria, descricao, valor FROM lancamentos ORDER BY id DESC",
       conexao,
@@ -23,13 +22,33 @@ except Exception as e:
   df = pd.DataFrame()
 
 if not df.empty:
-  st.write("Selecione um lançamento abaixo para alterar os dados ou excluí-lo se foi cadastrado errado. Aqui você gerencia registros passados, presentes e futuros.")
+  # Converte a coluna de data de texto para data real do Python para conseguir filtrar passado/futuro perfeitamente
+  df["data_dt"] = pd.to_datetime(df["data"], format="%d/%m/%Y", errors="coerce")
+  hoje = pd.Timestamp(datetime.now().date())
+
+  # Separa os lançamentos futuros
+  df_futuros = df[df["data_dt"] > hoje].sort_values(by="data_dt", ascending=True)
+
+  # Seção Visual para Lançamentos Futuros
+  if not df_futuros.empty:
+      st.markdown("### ⏳ Lançamentos Futuros Cadastrados")
+      st.info("Estes são os seus compromissos e receitas agendadas para datas futuras. Eles já estão sendo computados para prever o seu saldo.")
+      
+      # Prepara tabela limpa para exibição
+      tabela_futuros = df_futuros[["id", "data", "tipo", "categoria", "descricao", "valor"]].copy()
+      tabela_futuros["valor"] = tabela_futuros["valor"].apply(lambda v: f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+      tabela_futuros.columns = ["ID", "Data", "Tipo", "Categoria", "Descrição", "Valor"]
+      
+      st.dataframe(tabela_futuros.reset_index(drop=True), use_container_width=True)
+      st.divider()
+
+  st.write("### 🔄 Editar ou Excluir Registros")
+  st.write("Selecione um lançamento abaixo para alterar os dados ou excluí-lo.")
 
   # Função auxiliar para formatar moeda
   def fmt_moeda(v):
       return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
-  # Formatar o valor para a string de exibição ficar amigável (ex: R$ 1.500,00)
   df["valor_fmt"] = pd.to_numeric(df["valor"], errors="coerce").fillna(0.0).apply(fmt_moeda)
 
   df["resumo_label"] = (
@@ -81,7 +100,6 @@ if not df.empty:
 
       if salvar_alteracao:
         try:
-          # Valida rigorosamente se a data digitada está no formato DD/MM/AAAA correto
           datetime.strptime(nova_data.strip(), "%d/%m/%Y")
 
           conexao = obter_conexao()
@@ -107,7 +125,7 @@ if not df.empty:
           st.success("Lançamento atualizado com sucesso!")
           st.rerun()
         except ValueError:
-          st.error("A data digitada é inválida. Utilize estritamente o formato DD/MM/AAAA.")
+          st.error("A data digitada é inválida. Utilize o formato DD/MM/AAAA.")
         except Exception as e:
           st.error(f"Erro ao atualizar: {e}")
 
