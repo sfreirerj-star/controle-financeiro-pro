@@ -27,19 +27,13 @@ with st.form("form_lancamento", clear_on_submit=True):
   valor_final = 0.0
   if valor_texto:
       try:
-          # Remove espaços e substitui vírgula por ponto caso o usuário digite com vírgula tradicional
           limpo = valor_texto.strip().replace(",", ".")
-          
           if "." in limpo:
-              # Se o usuário digitou com ponto/vírgula decimal (ex: 12.50 ou 12,50)
               valor_final = float(limpo)
           else:
-              # Se digitou apenas números inteiros (ex: 12 vira 12.00, 1250 vira 12.50)
-              # Se tiver 3 dígitos ou mais, tratamos os 2 últimos como centavos, senão é valor inteiro.
               if len(limpo) <= 2:
                   valor_final = float(limpo)
               else:
-                  # Ex: 1250 -> 1250 / 100 = 12.50
                   valor_final = float(limpo) / 100.0
       except ValueError:
           valor_final = 0.0
@@ -47,16 +41,18 @@ with st.form("form_lancamento", clear_on_submit=True):
   def fmt_moeda(v):
       return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
-  # Mostra na hora o valor formatado para você conferir antes de salvar
   if valor_final > 0:
       st.info(f"Valor a ser lançado: **{fmt_moeda(valor_final)}**")
 
+  # Opção de data: exibimos o checkbox e logo abaixo o calendário padrão 
+  # para que o usuário possa escolher a data desejada sem sumir elementos.
   usar_data_hoje = st.checkbox("Usar data de hoje", value=True)
 
   if usar_data_hoje:
     data_selecionada = datetime.now()
+    st.write(f"Data selecionada: **{data_selecionada.strftime('%d/%m/%Y')}** (Hoje)")
   else:
-    data_selecionada = st.date_input("Data do Lançamento", value=datetime.now())
+    data_selecionada = st.date_input("Selecione a Data do Lançamento", value=datetime.now())
 
   enviar = st.form_submit_button("Salvar Lançamento")
 
