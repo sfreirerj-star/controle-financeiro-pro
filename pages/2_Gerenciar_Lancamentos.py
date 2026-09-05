@@ -4,18 +4,15 @@ import streamlit as st
 
 st.set_page_config(page_title="Gerenciar Lançamentos", page_icon="✏️")
 
-
 def obter_conexao():
   return psycopg2.connect(st.secrets["DATABASE_URL"])
-
 
 st.subheader("✏️ Editar ou Excluir Lançamentos")
 
 try:
   conexao = obter_conexao()
   df = pd.read_sql_query(
-      "SELECT id, data, tipo, categoria, descricao, valor FROM lancamentos"
-      " ORDER BY id DESC",
+      "SELECT id, data, tipo, categoria, descricao, valor FROM lancamentos ORDER BY id DESC",
       conexao,
   )
   conexao.close()
@@ -24,10 +21,14 @@ except Exception as e:
   df = pd.DataFrame()
 
 if not df.empty:
-  st.write(
-      "Selecione um lançamento abaixo para alterar os dados ou excluí-lo se"
-      " foi cadastrado errado."
-  )
+  st.write("Selecione um lançamento abaixo para alterar os dados ou excluí-lo se foi cadastrado errado.")
+
+  # Função auxiliar para formatar moeda
+  def fmt_moeda(v):
+      return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+  # Formatar o valor para a string de exibição ficar amigável (ex: R$ 1.500,00)
+  df["valor_fmt"] = pd.to_numeric(df["valor"], errors="coerce").fillna(0.0).apply(fmt_moeda)
 
   df["resumo_label"] = (
       "ID: "
@@ -38,8 +39,8 @@ if not df.empty:
       + df["tipo"]
       + " | "
       + df["categoria"]
-      + " | R$ "
-      + df["valor"].astype(str)
+      + " | "
+      + df["valor_fmt"]
       + " ("
       + df["descricao"].fillna("")
       + ")"
@@ -82,10 +83,10 @@ if not df.empty:
           cursor = conexao.cursor()
           cursor.execute(
               """
-                        UPDATE lancamentos 
-                        SET data = %s, tipo = %s, categoria = %s, descricao = %s, valor = %s
-                        WHERE id = %s
-                    """,
+              UPDATE lancamentos 
+              SET data = %s, tipo = %s, categoria = %s, descricao = %s, valor = %s
+              WHERE id = %s
+              """,
               (
                   nova_data,
                   novo_tipo,
