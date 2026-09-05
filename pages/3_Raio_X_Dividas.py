@@ -2,57 +2,162 @@ import pandas as pd
 import psycopg2
 import streamlit as st
 
-st.set_page_config(page_title="Raio-X de Dívidas", page_icon="⚠️")
-
+st.set_page_config(page_title="Raio-X de Dívidas", page_icon="⚠️", layout="wide")
 
 def obter_conexao():
-  return psycopg2.connect(st.secrets["DATABASE_URL"])
+    return psycopg2.connect(st.secrets["DATABASE_URL"])
 
-
-st.subheader("⚠️ Gerenciar Dívidas e Juros")
-
-with st.form("form_divida", clear_on_submit=True):
-  credor = st.text_input("Credor / Nome da Dívida (Ex: Cartão de Crédito)")
-  valor_total = st.number_input(
-      "Valor Total Devido (R$)", min_value=0.0, format="%.2f"
-  )
-  juros_mensal = st.number_input(
-      "Taxa de Juros Mensal (%)", min_value=0.0, format="%.2f"
-  )
-
-  salvar_divida = st.form_submit_button("Cadastrar Dívida")
-
-  if salvar_divida:
-    if credor and valor_total > 0:
-      try:
+# Garantir que a tabela tenha todas as colunas necessárias
+def atualizar_tabela_dividas():
+    try:
         conexao = obter_conexao()
         cursor = conexao.cursor()
-        cursor.execute(
-            """
-                    INSERT INTO dividas (credor, valor_total, juros_mensal, status)
-                    VALUES (%s, %s, %s, %s)
-                """,
-            (credor, valor_total, juros_mensal, "Pendente"),
-        )
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS dividas (
+                id SERIAL PRIMARY KEY,
+                credor TEXT,
+                valor_total REAL,
+                total_parcelas INTEGER,
+                valor_parcela REAL,
+                dia_vencimento INTEGER,
+                status TEXT
+            )
+        """)
         conexao.commit()
         cursor.close()
         conexao.close()
-        st.success("Dívida cadastrada com sucesso!")
-        st.rerun()
-      except Exception as e:
-        st.error(f"Erro ao salvar dívida: {e}")
-    else:
-      st.error("Preencha o credor e o valor total.")
+    except Exception as e:
+        st.error(f"Erro ao atualizar estrutura da tabela: {e}")
+
+atualizar_tabela_dividas()
+
+st.subheader("⚠️ Gerenciamento de Dívidas e Parcelamentos")
+
+# Formulário de Cadastro de Nova Dívida
+with st.form("form_divida", clear_on_submit=True):
+    st.markdown("### Cadastrar Novo Parcelamento / Dívida")
+    credor = st.text_input("Credor / Nome da Dívida (Ex: Carnê Casas Bahia)")
+    
+    col_d1, col_d2, col_d3, col_d4 = st.columns(4)
+    with col_d1:
+        valor_total = st.number_input("Valor Total (R$)", min_value=0.0, format="%.2f", value=0.0)
+    with col_d2:
+        total_parcelas = st.number_input("Total de Parcelas", min_value=1, step=1, value=1)
+    with col_d3:
+        valor_parcela = st.number_input("Valor da Parcela (R$)", min_value=0.0, format="%.2f", value=0.0)
+    with col_d4:
+        dia_vencimento = st.number_input("Dia de Vencimento", min_value=1, max_value=31, step=1, value=15)
+
+    status = st.selectbox("Status", ["Pendente", "Quitada"])
+
+    cadastrar = st.form_submit_button("Cadastrar Dívida")
+
+    if cadastrar:
+        if credor and valor_total > 0:
+            try:
+                conexao = obter_conexao()
+                cursor = conexao.cursor()
+                cursor.execute(
+                    """
+                    INSERT INTO dividas (credor, valor_total, total_parcelas, valor_parcela, dia_vencimento, status)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    """,
+                    (credor, valor_total, int(total_parcelas), valor_parcela, int(dia_vencimento), status)
+                )
+                conexao.commit()
+                cursor.close()
+                conexao.close()
+                st.success("Dívida cadastrada com sucesso!")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Erro ao salvar dívida: {e}")
+        else:
+            st.warning("Preencha o credor e um valor total válido.")
+
+st.divider()
+
+# Listagem e Gerenciamento de Dívidas Existentes
+st.markdown("### Suas Dívidas Ativas e Parcelamentos")
 
 try:
-  conexao = obter_conexao()
-  df_dividas = pd.read_sql_query("SELECT * FROM dividas", conexao)
-  conexao.close()
+    conexao = obter_conexao()
+    df_dividas = pd.read_sql_query("SELECT * FROM dividas ORDER BY id DESC", conexao)
+    conexao.close()
 except Exception:
-  df_dividas = pd.DataFrame()
+    df_dividas = pd.DataFrame()
 
 if not df_dividas.empty:
-  st.write("### Suas Dívidas Ativas")
-  st.dataframe(df_dividas, use_container_width=True)
+    def fmt_moeda(v):
+        return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+    # Criar cópia formatada para exibição
+    df_exibicao = df_dividas.copy()
+    df_exibicao["valor_total"] = pd.to_numeric(df_exibicao["valor_total"], errors="coerce").fillna(0.0).apply(fmt_moeda)
+    df_exibicao["valor_parcela"] = pd.to_numeric(df_exibicao["valor_parcela"], errors="coerce").fillna(0.0).apply(fmt_moeda)
+
+    st.dataframe(
+        df_exibicao[["id", "credor", "valor_total", "total_parcelas", "valor_parcela", "dia_vencimento", "status"]].set_index("id"),
+        use_container_width=True
+    )
+
+    st.markdown("---")
+    st.markdown("### ✏️ Editar ou Excluir Dívida")
+    
+    # Criar rótulo amigável para selecionar qual dívida corrigir/excluir
+    df_dividas["resumo"] = "ID: " + df_dividas["id"].astype(str) + " | " + df_dividas["credor"] + " | Total: R$ " + df_dividas["valor_total"].astype(str)
+    
+    divida_selecionada = st.selectbox("Selecione a dívida para gerenciar:", df_dividas["resumo"].tolist())
+    id_divida = int(divida_selecionada.split(" | ")[0].replace("ID: ", ""))
+    dado_atual = df_dividas[df_dividas["id"] == id_divida].iloc[0]
+
+    col_e1, col_e2 = st.columns(2)
+
+    with col_e1:
+        with st.form("form_edicao_divida"):
+            st.markdown("#### Corrigir Dados da Dívida")
+            novo_credor = st.text_input("Credor", value=dado_atual["credor"])
+            novo_valor_total = st.number_input("Valor Total (R$)", value=float(dado_atual["valor_total"]), format="%.2f")
+            novo_total_parcelas = st.number_input("Total de Parcelas", value=int(dado_atual["total_parcelas"]), min_value=1, step=1)
+            novo_valor_parcela = st.number_input("Valor da Parcela (R$)", value=float(dado_atual["valor_parcela"]), format="%.2f")
+            novo_dia_vencimento = st.number_input("Dia de Vencimento", value=int(dado_atual["dia_vencimento"]), min_value=1, max_value=31, step=1)
+            novo_status = st.selectbox("Status", ["Pendente", "Quitada"], index=0 if dado_atual["status"] == "Pendente" else 1)
+
+            salvar = st.form_submit_button("Salvar Alterações")
+
+            if salvar:
+                try:
+                    conexao = obter_conexao()
+                    cursor = conexao.cursor()
+                    cursor.execute(
+                        """
+                        UPDATE dividas 
+                        SET credor = %s, valor_total = %s, total_parcelas = %s, valor_parcela = %s, dia_vencimento = %s, status = %s
+                        WHERE id = %s
+                        """,
+                        (novo_credor, novo_valor_total, int(novo_total_parcelas), novo_valor_parcela, int(novo_dia_vencimento), novo_status, id_divida)
+                    )
+                    conexao.commit()
+                    cursor.close()
+                    conexao.close()
+                    st.success("Dívida atualizada com sucesso!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Erro ao atualizar: {e}")
+
+    with col_e2:
+        st.markdown("#### Excluir Dívida")
+        st.warning("Cuidado: Essa ação remove o registro do controle de dívidas.")
+        if st.button("Excluir esta Dívida", type="primary"):
+            try:
+                conexao = obter_conexao()
+                cursor = conexao.cursor()
+                cursor.execute("DELETE FROM dividas WHERE id = %s", (id_divida,))
+                conexao.commit()
+                cursor.close()
+                conexao.close()
+                st.success("Dívida excluída com sucesso!")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Erro ao excluir: {e}")
 else:
-  st.info("Nenhuma dívida cadastrada no momento.")
+    st.info("Nenhuma dívida cadastrada no momento.")
