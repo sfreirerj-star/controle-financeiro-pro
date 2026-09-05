@@ -7,22 +7,27 @@ st.set_page_config(page_title="Raio-X de Dívidas", page_icon="⚠️", layout="
 def obter_conexao():
     return psycopg2.connect(st.secrets["DATABASE_URL"])
 
-# Garantir que a tabela tenha todas as colunas necessárias
+# Garantir que a tabela e todas as colunas necessárias existam
 def atualizar_tabela_dividas():
     try:
         conexao = obter_conexao()
         cursor = conexao.cursor()
+        
+        # Cria a tabela se não existir
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS dividas (
                 id SERIAL PRIMARY KEY,
                 credor TEXT,
                 valor_total REAL,
-                total_parcelas INTEGER,
-                valor_parcela REAL,
-                dia_vencimento INTEGER,
                 status TEXT
             )
         """)
+        
+        # Adiciona colunas novas caso a tabela seja antiga
+        cursor.execute("ALTER TABLE dividas ADD COLUMN IF NOT EXISTS total_parcelas INTEGER;")
+        cursor.execute("ALTER TABLE dividas ADD COLUMN IF NOT EXISTS valor_parcela REAL;")
+        cursor.execute("ALTER TABLE dividas ADD COLUMN IF NOT EXISTS dia_vencimento INTEGER;")
+        
         conexao.commit()
         cursor.close()
         conexao.close()
@@ -90,21 +95,29 @@ if not df_dividas.empty:
     def fmt_moeda(v):
         return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
-    # Criar cópia formatada para exibição
     df_exibicao = df_dividas.copy()
-    df_exibicao["valor_total"] = pd.to_numeric(df_exibicao["valor_total"], errors="coerce").fillna(0.0).apply(fmt_moeda)
-    df_exibicao["valor_parcela"] = pd.to_numeric(df_exibicao["valor_parcela"], errors="coerce").fillna(0.0).apply(fmt_moeda)
+    
+    # Preencher valores nulos caso existam registros antigos sem essas colunas
+    if "valor_total" in df_exibicao.columns:
+        df_exibicao["valor_total"] = pd.to_numeric(df_exibicao["valor_total"], errors="coerce").fillna(0.0).apply(fmt_moeda)
+    if "valor_parcela" in df_exibicao.columns:
+        df_exibicao["valor_parcela"] = pd.to_numeric(df_exibicao["valor_parcela"], errors="coerce").fillna(0.0).apply(fmt_moeda)
+    if "total_parcelas" in df_exibicao.columns:
+        df_exibicao["total_parcelas"] = pd.to_numeric(df_exibicao["total_parcelas"], errors="coerce").fillna(0)
+    if "dia_vencimento" in df_exibicao.columns:
+        df_exibicao["dia_vencimento"] = pd.to_numeric(df_exibicao["dia_vencimento"], errors="coerce").fillna(0)
+
+    colunas_disponiveis = [col for col in ["id", "credor", "valor_total", "total_parcelas", "valor_parcela", "dia_vencimento", "status"] if col in df_exibicao.columns]
 
     st.dataframe(
-        df_exibicao[["id", "credor", "valor_total", "total_parcelas", "valor_parcela", "dia_vencimento", "status"]].set_index("id"),
+        df_exibicao[colunas_disponiveis].set_index("id"),
         use_container_width=True
     )
 
     st.markdown("---")
     st.markdown("### ✏️ Editar ou Excluir Dívida")
     
-    # Criar rótulo amigável para selecionar qual dívida corrigir/excluir
-    df_dividas["resumo"] = "ID: " + df_dividas["id"].astype(str) + " | " + df_dividas["credor"] + " | Total: R$ " + df_dividas["valor_total"].astype(str)
+    df_dividas["resumo"] = "ID: " + df_dividas["id"].astype(str) + " | " + df_dividas["credor"].fillna("")
     
     divida_selecionada = st.selectbox("Selecione a dívida para gerenciar:", df_dividas["resumo"].tolist())
     id_divida = int(divida_selecionada.split(" | ")[0].replace("ID: ", ""))
@@ -115,12 +128,12 @@ if not df_dividas.empty:
     with col_e1:
         with st.form("form_edicao_divida"):
             st.markdown("#### Corrigir Dados da Dívida")
-            novo_credor = st.text_input("Credor", value=dado_atual["credor"])
-            novo_valor_total = st.number_input("Valor Total (R$)", value=float(dado_atual["valor_total"]), format="%.2f")
-            novo_total_parcelas = st.number_input("Total de Parcelas", value=int(dado_atual["total_parcelas"]), min_value=1, step=1)
-            novo_valor_parcela = st.number_input("Valor da Parcela (R$)", value=float(dado_atual["valor_parcela"]), format="%.2f")
-            novo_dia_vencimento = st.number_input("Dia de Vencimento", value=int(dado_atual["dia_vencimento"]), min_value=1, max_value=31, step=1)
-            novo_status = st.selectbox("Status", ["Pendente", "Quitada"], index=0 if dado_atual["status"] == "Pendente" else 1)
+            novo_credor = st.text_input("Credor", value=str(dado_atual["credor"]) if pd.notna(dado_atual["credor"]) else "")
+            novo_valor_total = st.number_input("Valor Total (R$)", value=float(dado_atual["valor_total"]) if "valor_total" in dado_atual and pd.notna(dado_atual["valor_total"]) else 0.0, format="%.2f")
+            novo_total_parcelas = st.number_input("Total de Parcelas", value=int(dado_atual["total_parcelas"]) if "total_parcelas" in dado_atual and pd.notna(dado_atual["total_parcelas"]) else 1, min_value=1, step=1)
+            novo_valor_parcela = st.number_input("Valor da Parcela (R$)", value=float(dado_atual["valor_parcela"]) if "valor_parcela" in dado_atual and pd.notna(dado_atual["valor_parcela"]) else 0.0, format="%.2f")
+            novo_dia_vencimento = st.number_input("Dia de Vencimento", value=int(dado_atual["dia_vencimento"]) if "dia_vencimento" in dado_atual and pd.notna(dado_atual["dia_vencimento"]) else 15, min_value=1, max_value=31, step=1)
+            novo_status = st.selectbox("Status", ["Pendente", "Quitada"], index=0 if dado_atual.get("status") == "Pendente" else 1)
 
             salvar = st.form_submit_button("Salvar Alterações")
 
