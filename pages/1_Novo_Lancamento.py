@@ -9,8 +9,6 @@ def obter_conexao():
 
 st.subheader("➕ Registrar Gasto ou Receita")
 
-# Usamos st.session_state ou criamos uma lógica fora do form para o checkbox se necessário,
-# mas mantendo dentro do form de forma fixa com um if simples:
 with st.form("form_lancamento", clear_on_submit=True):
   tipo = st.selectbox("Tipo", ["Despesa", "Receita"])
   categoria = st.text_input(
@@ -18,14 +16,14 @@ with st.form("form_lancamento", clear_on_submit=True):
   )
   descricao = st.text_input("Descrição / Estabelecimento")
 
-  # Campo de texto livre para o valor (começa totalmente vazio)
+  # Campo de valor inteligente (vazio, digite direto os números)
   valor_texto = st.text_input(
       "Valor (Ex: digite 12 para 12,00 ou 1250 para 12,50)",
       value="",
       placeholder="Ex: 12 ou 15050"
   )
 
-  # Lógica inteligente para converter o texto digitado em valor real
+  # Conversão do valor
   valor_final = 0.0
   if valor_texto:
       try:
@@ -48,18 +46,18 @@ with st.form("form_lancamento", clear_on_submit=True):
 
   usar_data_hoje = st.checkbox("Usar data de hoje", value=True)
 
-  # Para evitar que o campo suma ao desmarcar dentro do form, 
-  # exibimos o date_input fixo, mas pré-preenchido com hoje caso o checkbox esteja marcado.
+  # Lógica correta para o checkbox: só exibe o calendário se desmarcar
   if usar_data_hoje:
-    data_selecionada = st.date_input("Data do Lançamento", value=datetime.now())
-    # Opcional: se quiser travar quando o checkbox estiver marcado, ou deixar livre.
-    # Como o Streamlit redesenha, manter o date_input visível resolve 100% o sumiço!
+    data_selecionada = datetime.now()
   else:
-    data_selecionada = st.date_input("Selecione a Data do Lançamento (DD/MM/AAAA)", value=datetime.now())
+    data_selecionada = st.date_input("Selecione a Data do Lançamento", value=datetime.now())
+    # Exibe visualmente a confirmação em formato brasileiro DD/MM/AAAA para você conferir
+    st.write(f"Data selecionada: **{data_selecionada.strftime('%d/%m/%Y')}**")
 
   enviar = st.form_submit_button("Salvar Lançamento")
 
   if enviar:
+    # Formata rigorosamente para o padrão brasileiro DD/MM/AAAA antes de enviar ao banco
     data_formatada = data_selecionada.strftime("%d/%m/%Y")
 
     if categoria and valor_final > 0:
