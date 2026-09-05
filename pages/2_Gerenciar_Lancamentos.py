@@ -1,3 +1,4 @@
+from datetime import datetime
 import pandas as pd
 import psycopg2
 import streamlit as st
@@ -11,6 +12,7 @@ st.subheader("✏️ Editar ou Excluir Lançamentos")
 
 try:
   conexao = obter_conexao()
+  # Busca todos os lançamentos sem restrição de data (traz passados, presentes e futuros)
   df = pd.read_sql_query(
       "SELECT id, data, tipo, categoria, descricao, valor FROM lancamentos ORDER BY id DESC",
       conexao,
@@ -21,7 +23,7 @@ except Exception as e:
   df = pd.DataFrame()
 
 if not df.empty:
-  st.write("Selecione um lançamento abaixo para alterar os dados ou excluí-lo se foi cadastrado errado.")
+  st.write("Selecione um lançamento abaixo para alterar os dados ou excluí-lo se foi cadastrado errado. Aqui você gerencia registros passados, presentes e futuros.")
 
   # Função auxiliar para formatar moeda
   def fmt_moeda(v):
@@ -79,6 +81,9 @@ if not df.empty:
 
       if salvar_alteracao:
         try:
+          # Valida rigorosamente se a data digitada está no formato DD/MM/AAAA correto
+          datetime.strptime(nova_data.strip(), "%d/%m/%Y")
+
           conexao = obter_conexao()
           cursor = conexao.cursor()
           cursor.execute(
@@ -88,7 +93,7 @@ if not df.empty:
               WHERE id = %s
               """,
               (
-                  nova_data,
+                  nova_data.strip(),
                   novo_tipo,
                   nova_categoria,
                   nova_descricao,
@@ -101,6 +106,8 @@ if not df.empty:
           conexao.close()
           st.success("Lançamento atualizado com sucesso!")
           st.rerun()
+        except ValueError:
+          st.error("A data digitada é inválida. Utilize estritamente o formato DD/MM/AAAA.")
         except Exception as e:
           st.error(f"Erro ao atualizar: {e}")
 
