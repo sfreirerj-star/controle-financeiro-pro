@@ -16,27 +16,27 @@ with st.form("form_lancamento", clear_on_submit=True):
   )
   descricao = st.text_input("Descrição / Estabelecimento")
 
-  # Campo de valor inteligente (digite os centavos direto, ex: 15050 vira 150.50)
+  # Campo único de valor inteligente em centavos (ex: digite 12345 e ele calcula R$ 123,45)
   valor_centavos = st.number_input(
-      "Valor (Digite o valor em centavos ou completo)",
+      "Valor (Digite os números sem vírgula, ex: 12345 para 123,45)",
       min_value=0,
       step=1,
       value=0,
       help=(
-          "Digite o valor. Exemplo: Para R$ 150,50 digite 15050 ou use o valor"
-          " real."
+          "Digite o valor sem pontos ou vírgulas. "
+          "Exemplo: Para R$ 150,50 digite 15050. Os dois últimos dígitos são os centavos."
       ),
   )
 
-  col_v1, col_v2 = st.columns(2)
-  with col_v1:
-    valor_real = st.number_input(
-        "Valor (R$ com casas decimais)", min_value=0.0, format="%.2f", value=0.0
-    )
+  # Mostra na hora o valor formatado para você conferir antes de salvar
+  valor_final = valor_centavos / 100.0
+  
+  def fmt_moeda(v):
+      return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+  
+  st.info(f"Valor a ser lançado: **{fmt_moeda(valor_final)}**")
 
-  with col_v2:
-    # Checkbox para alternar facilmente se deseja usar a data de hoje de forma automática
-    usar_data_hoje = st.checkbox("Usar data de hoje", value=True)
+  usar_data_hoje = st.checkbox("Usar data de hoje", value=True)
 
   if usar_data_hoje:
     data_selecionada = datetime.now()
@@ -46,10 +46,7 @@ with st.form("form_lancamento", clear_on_submit=True):
   enviar = st.form_submit_button("Salvar Lançamento")
 
   if enviar:
-    data_formatada = data_selecionada.strftime("%d/%m/%Y")
-    
-    # Validação inteligente: se preencheu valor em centavos mas esqueceu o real, podemos converter automaticamente
-    valor_final = valor_real if valor_real > 0 else (valor_centavos / 100.0 if valor_centavos > 0 else 0.0)
+    data_formatada = data_selenicada = data_selecionada.strftime("%d/%m/%Y")
 
     if categoria and valor_final > 0:
       try:
