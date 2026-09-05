@@ -1,11 +1,11 @@
-import matplotlib.pyplot as plt
 import pandas as pd
+import plotly.express as px
 import psycopg2
 import streamlit as st
 
 # Configuração da Página
 st.set_page_config(
-    page_title="Controle Financeiro Pro", page_icon="💰", layout="centered"
+    page_title="Controle Financeiro Pro", page_icon="💰", layout="wide"
 )
 
 # Conexão com o Banco de Dados PostgreSQL no Supabase via Secrets
@@ -33,7 +33,6 @@ def inicializar_banco():
                 id SERIAL PRIMARY KEY,
                 credor TEXT,
                 valor_total REAL,
-                juros_mensal REAL,
                 status TEXT
             )
         """)
@@ -60,7 +59,7 @@ except Exception:
         columns=["id", "data", "tipo", "categoria", "descricao", "valor"]
     )
     df_dividas = pd.DataFrame(
-        columns=["id", "credor", "valor_total", "juros_mensal", "status"]
+        columns=["id", "credor", "valor_total", "status"]
     )
 
 st.subheader("Resumo do Mês e Visualização Gráfica")
@@ -74,7 +73,6 @@ if not df_lancamentos.empty and "valor" in df_lancamentos.columns:
     total_despesas = df_lancamentos[df_lancamentos["tipo"] == "Despesa"]["valor"].sum()
     saldo = total_receitas - total_despesas
 
-    # Função auxiliar para formatar moeda no padrão brasileiro (R$ X.XXX,XX)
     def fmt_moeda(valor):
         return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
@@ -94,44 +92,50 @@ if not df_lancamentos.empty and "valor" in df_lancamentos.columns:
 
     st.divider()
 
-    # Gráficos se houver despesas
+    # Gráficos interativos usando Plotly (evita sobreposição de textos)
     df_despesas = df_lancamentos[df_lancamentos["tipo"] == "Despesa"]
     if not df_despesas.empty:
         st.write("### Distribuição dos Gastos por Categoria")
-        gasto_por_cat = df_despesas.groupby("categoria")["valor"].sum()
+        
+        # Agrupar por categoria para somar os valores
+        gasto_por_cat = df_despesas.groupby("categoria")["valor"].sum().reset_index()
 
         col_g1, col_g2 = st.columns(2)
 
         with col_g1:
             st.write("**Gráfico de Pizza**")
-            fig1, ax1 = plt.subplots(figsize=(4, 4))
-            ax1.pie(
-                gasto_por_cat, labels=gasto_por_cat.index, autopct="%1.1f%%", startangle=90
+            fig1 = px.pie(
+                gasto_por_cat, 
+                names="categoria", 
+                values="valor", 
+                hole=0.3, # Deixa um gráfico de rosca moderno e limpo
+                height=400
             )
-            ax1.axis("equal")
-            st.pyplot(fig1)
+            fig1.update_traces(textposition='inside', textinfo='percent+label')
+            st.plotly_chart(fig1, use_container_width=True)
 
         with col_g2:
             st.write("**Gráfico de Barras**")
-            fig2, ax2 = plt.subplots(figsize=(4, 4))
-            gasto_por_cat.plot(kind="bar", ax=ax2, color="#1a73e8")
-            ax2.set_ylabel("Valor (R$)")
-            plt.xticks(rotation=45)
-            st.pyplot(fig2)
+            fig2 = px.bar(
+                gasto_por_cat, 
+                x="categoria", 
+                y="valor", 
+                text_auto='.2s',
+                height=400,
+                color="categoria"
+            )
+            fig2.update_layout(xaxis_tickangle=-45, showlegend=False)
+            st.plotly_chart(fig2, use_container_width=True)
     else:
         st.info("Cadastre algumas despesas para visualizar os gráficos.")
 
     st.subheader("Histórico de Lançamentos")
     
-    # Formatar coluna valor para exibição e remover índice lateral
     df_exibicao = df_lancamentos.tail(10).copy()
     df_exibicao["valor"] = df_exibicao["valor"].apply(fmt_moeda)
     st.dataframe(df_exibicao.set_index("id"), use_container_width=True)
 else:
-    st.info(
-        "Nenhum lançamento registrado ainda. Utilize a aba '1_Novo_Lancamento' no"
-        " menu lateral."
-    )
+    st.info("Nenhum lançamento registrado ainda. Utilize o menu lateral para cadastrar.")
 
 st.divider()
 st.subheader("⚠️ Mapeamento de Dívidas Ativas")
@@ -140,8 +144,6 @@ if not df_dividas.empty:
     df_dividas_exibicao = df_dividas.copy()
     if "valor_total" in df_dividas_exibicao.columns:
         df_dividas_exibicao["valor_total"] = pd.to_numeric(df_dividas_exibicao["valor_total"], errors="coerce").fillna(0.0).apply(fmt_moeda)
-    if "juros_mensal" in df_dividas_exibicao.columns:
-        df_dividas_exibicao["juros_mensal"] = pd.to_numeric(df_dividas_exibicao["juros_mensal"], errors="coerce").fillna(0.0).apply(lambda x: f"{x:.2f}%")
         
     st.dataframe(df_dividas_exibicao.set_index("id"), use_container_width=True)
 else:
