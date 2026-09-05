@@ -22,25 +22,28 @@ except Exception as e:
   df = pd.DataFrame()
 
 if not df.empty:
-  # Converte a coluna de data de texto para data real do Python para conseguir filtrar passado/futuro perfeitamente
+  # Converte a coluna de data para data real do Python para filtrar passado/futuro
   df["data_dt"] = pd.to_datetime(df["data"], format="%d/%m/%Y", errors="coerce")
   hoje = pd.Timestamp(datetime.now().date())
 
   # Separa os lançamentos futuros
   df_futuros = df[df["data_dt"] > hoje].sort_values(by="data_dt", ascending=True)
 
-  # Seção Visual para Lançamentos Futuros
+  # Seção Visual Fixa para Lançamentos Futuros
+  st.markdown("### ⏳ Lançamentos Futuros Cadastrados")
+  
   if not df_futuros.empty:
-      st.markdown("### ⏳ Lançamentos Futuros Cadastrados")
       st.info("Estes são os seus compromissos e receitas agendadas para datas futuras. Eles já estão sendo computados para prever o seu saldo.")
       
-      # Prepara tabela limpa para exibição
       tabela_futuros = df_futuros[["id", "data", "tipo", "categoria", "descricao", "valor"]].copy()
       tabela_futuros["valor"] = tabela_futuros["valor"].apply(lambda v: f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
       tabela_futuros.columns = ["ID", "Data", "Tipo", "Categoria", "Descrição", "Valor"]
       
       st.dataframe(tabela_futuros.reset_index(drop=True), use_container_width=True)
-      st.divider()
+  else:
+      st.info("Não há lançamentos futuros cadastrados no momento.")
+
+  st.divider()
 
   st.write("### 🔄 Editar ou Excluir Registros")
   st.write("Selecione um lançamento abaixo para alterar os dados ou excluí-lo.")
