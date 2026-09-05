@@ -16,25 +16,40 @@ with st.form("form_lancamento", clear_on_submit=True):
   )
   descricao = st.text_input("Descrição / Estabelecimento")
 
-  # Campo único de valor inteligente em centavos (ex: digite 12345 e ele calcula R$ 123,45)
-  valor_centavos = st.number_input(
-      "Valor (Digite os números sem vírgula, ex: 12345 para 123,45)",
-      min_value=0,
-      step=1,
-      value=0,
-      help=(
-          "Digite o valor sem pontos ou vírgulas. "
-          "Exemplo: Para R$ 150,50 digite 15050. Os dois últimos dígitos são os centavos."
-      ),
+  # Campo de texto livre para o valor (começa totalmente vazio)
+  valor_texto = st.text_input(
+      "Valor (Ex: digite 12 para 12,00 ou 1250 para 12,50)",
+      value="",
+      placeholder="Ex: 12 ou 15050"
   )
 
-  # Mostra na hora o valor formatado para você conferir antes de salvar
-  valor_final = valor_centavos / 100.0
-  
+  # Lógica inteligente para converter o texto digitado em valor real
+  valor_final = 0.0
+  if valor_texto:
+      try:
+          # Remove espaços e substitui vírgula por ponto caso o usuário digite com vírgula tradicional
+          limpo = valor_texto.strip().replace(",", ".")
+          
+          if "." in limpo:
+              # Se o usuário digitou com ponto/vírgula decimal (ex: 12.50 ou 12,50)
+              valor_final = float(limpo)
+          else:
+              # Se digitou apenas números inteiros (ex: 12 vira 12.00, 1250 vira 12.50)
+              # Se tiver 3 dígitos ou mais, tratamos os 2 últimos como centavos, senão é valor inteiro.
+              if len(limpo) <= 2:
+                  valor_final = float(limpo)
+              else:
+                  # Ex: 1250 -> 1250 / 100 = 12.50
+                  valor_final = float(limpo) / 100.0
+      except ValueError:
+          valor_final = 0.0
+
   def fmt_moeda(v):
       return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-  
-  st.info(f"Valor a ser lançado: **{fmt_moeda(valor_final)}**")
+
+  # Mostra na hora o valor formatado para você conferir antes de salvar
+  if valor_final > 0:
+      st.info(f"Valor a ser lançado: **{fmt_moeda(valor_final)}**")
 
   usar_data_hoje = st.checkbox("Usar data de hoje", value=True)
 
@@ -46,7 +61,7 @@ with st.form("form_lancamento", clear_on_submit=True):
   enviar = st.form_submit_button("Salvar Lançamento")
 
   if enviar:
-    data_formatada = data_selenicada = data_selecionada.strftime("%d/%m/%Y")
+    data_formatada = data_selecionada.strftime("%d/%m/%Y")
 
     if categoria and valor_final > 0:
       try:
@@ -63,6 +78,7 @@ with st.form("form_lancamento", clear_on_submit=True):
         cursor.close()
         conexao.close()
         st.success("Lançamento salvo com sucesso no banco em nuvem!")
+        st.rerun()
       except Exception as e:
         st.error(f"Erro ao salvar: {e}")
     else:
