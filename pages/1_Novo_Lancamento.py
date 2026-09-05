@@ -44,15 +44,15 @@ with st.form("form_lancamento", clear_on_submit=True):
   if valor_final > 0:
       st.info(f"Valor a ser lançado: **{fmt_moeda(valor_final)}**")
 
-  # Opção de data: exibimos o checkbox e logo abaixo o calendário padrão 
-  # para que o usuário possa escolher a data desejada sem sumir elementos.
   usar_data_hoje = st.checkbox("Usar data de hoje", value=True)
 
   if usar_data_hoje:
     data_selecionada = datetime.now()
-    st.write(f"Data selecionada: **{data_selecionada.strftime('%d/%m/%Y')}** (Hoje)")
+    st.write(f"Data do lançamento: **{data_selecionada.strftime('%d/%m/%Y')}** (Hoje)")
   else:
+    # Se desmarcar, abrimos o seletor e mostramos logo abaixo o formato formatado DD/MM/AAAA
     data_selecionada = st.date_input("Selecione a Data do Lançamento", value=datetime.now())
+    st.write(f"Data escolhida: **{data_selecionada.strftime('%d/%m/%Y')}**")
 
   enviar = st.form_submit_button("Salvar Lançamento")
 
