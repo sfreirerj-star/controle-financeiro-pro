@@ -1,5 +1,5 @@
 streamlit
 pandas
-matplotlib
+plotly
 openpyxl
 psycopg2-binary
