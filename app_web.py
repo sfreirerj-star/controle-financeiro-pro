@@ -1,8 +1,7 @@
 from datetime import datetime
-import gspread
-from google.oauth2.service_account import Credentials
 import matplotlib.pyplot as plt
 import pandas as pd
+import psycopg2
 import streamlit as st
 
 # Configuração da Página
@@ -13,52 +12,49 @@ st.set_page_config(
 st.title("💰 Controle Financeiro - Sair do Vermelho")
 st.write("Aplicativo de controle total de créditos, débitos e investimentos.")
 
-# Conexão com o Google Sheets utilizando os Segredos do Streamlit Cloud
-@st.cache_resource
-def conectar_google_sheets():
-  scope = [
-      "https://www.googleapis.com/auth/spreadsheets",
-      "https://www.googleapis.com/auth/drive",
-  ]
-  creds_dict = dict(st.secrets["gcp_service_account"])
-  creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
-  client = gspread.authorize(creds)
-  # Abre a planilha chamada "BancoDadosFinanceiro" no seu Google Drive
-  return client.open("BancoDadosFinanceiro")
+
+# Conexão com o Banco de Dados PostgreSQL no Supabase via Secrets
+def obter_conexao():
+  url_conexao = st.secrets["DATABASE_URL"]
+  return psycopg2.connect(url_conexao)
 
 
-try:
-  planilha = conectar_google_sheets()
-  # Seleciona as abas (Worksheets) para Lançamentos e Dívidas
-  sheet_lancamentos = planilha.worksheet("lancamentos")
-except Exception as e:
-  st.error(
-      "Erro ao conectar com a planilha. Certifique-se de que a planilha"
-      ' "BancoDadosFinanceiro" existe e foi compartilhada com o e-mail da conta'
-      " de serviço."
-  )
-  st.stop()
+# Inicializar as tabelas no Supabase caso não existam
+def inicializar_banco():
+  try:
+    conexao = obter_conexao()
+    cursor = conexao.cursor()
+    cursor.execute("""
+            CREATE TABLE IF NOT EXISTS lancamentos (
+                id SERIAL PRIMARY KEY,
+                data TEXT,
+                tipo TEXT,
+                categoria TEXT,
+                descricao TEXT,
+                valor REAL
+            )
+        """)
+    cursor.execute("""
+            CREATE TABLE IF NOT EXISTS dividas (
+                id SERIAL PRIMARY KEY,
+                credor TEXT,
+                valor_total REAL,
+                juros_mensal REAL,
+                status TEXT
+            )
+        """)
+    conexao.commit()
+    cursor.close()
+    conexao.close()
+  except Exception as e:
+    st.error(
+        f"Erro ao conectar com o banco de dados no Supabase: {e}. Verifique a"
+        " URL nos Secrets."
+    )
+    st.stop()
 
-try:
-  sheet_dividas = planilha.worksheet("dividas")
-except Exception:
-  # Se a aba dividas não existir, cria automaticamente
-  sheet_dividas = planilha.add_worksheet(
-      title="dividas", rows="100", cols="10"
-  )
-  sheet_dividas.append_row(
-      ["id", "credor", "valor_total", "juros_mensal", "status"]
-  )
 
-try:
-  sheet_lancamentos = planilha.worksheet("lancamentos")
-except Exception:
-  sheet_lancamentos = planilha.add_worksheet(
-      title="lancamentos", rows="100", cols="10"
-  )
-  sheet_lancamentos.append_row(
-      ["id", "data", "tipo", "categoria", "descricao", "valor"]
-  )
+inicializar_banco()
 
 menu = st.sidebar.selectbox(
     "Menu Principal",
@@ -70,19 +66,16 @@ menu = st.sidebar.selectbox(
     ],
 )
 
-# Carregar dados do Google Sheets para DataFrames do Pandas
-dados_lancamentos = sheet_lancamentos.get_all_records()
-if dados_lancamentos:
-  df_lancamentos = pd.DataFrame(dados_lancamentos)
-else:
+# Carregar dados do Supabase para DataFrames do Pandas
+try:
+  conexao = obter_conexao()
+  df_lancamentos = pd.read_sql_query("SELECT * FROM lancamentos", conexao)
+  df_dividas = pd.read_sql_query("SELECT * FROM dividas", conexao)
+  conexao.close()
+except Exception:
   df_lancamentos = pd.DataFrame(
       columns=["id", "data", "tipo", "categoria", "descricao", "valor"]
   )
-
-dados_dividas = sheet_dividas.get_all_records()
-if dados_dividas:
-  df_dividas = pd.DataFrame(dados_dividas)
-else:
   df_dividas = pd.DataFrame(
       columns=["id", "credor", "valor_total", "juros_mensal", "status"]
   )
@@ -174,12 +167,23 @@ elif menu == "➕ Novo Lançamento":
 
     if enviar:
       if categoria and valor > 0:
-        novo_id = len(df_lancamentos) + 1
-        sheet_lancamentos.append_row(
-            [novo_id, data, tipo, categoria, descricao, valor]
-        )
-        st.success("Lançamento salvo com sucesso no Google Sheets!")
-        st.rerun()
+        try:
+          conexao = obter_conexao()
+          cursor = conexao.cursor()
+          cursor.execute(
+              """
+                        INSERT INTO lancamentos (data, tipo, categoria, descricao, valor)
+                        VALUES (%s, %s, %s, %s, %s)
+                    """,
+              (data, tipo, categoria, descricao, valor),
+          )
+          conexao.commit()
+          cursor.close()
+          conexao.close()
+          st.success("Lançamento salvo com sucesso no banco em nuvem!")
+          st.rerun()
+        except Exception as e:
+          st.error(f"Erro ao salvar: {e}")
       else:
         st.error("Preencha a categoria e um valor válido.")
 
@@ -199,12 +203,23 @@ elif menu == "⚠️ Raio-X de Dívidas":
 
     if salvar_divida:
       if credor and valor_total > 0:
-        novo_id_divida = len(df_dividas) + 1
-        sheet_dividas.append_row(
-            [novo_id_divida, credor, valor_total, juros_mensal, "Pendente"]
-        )
-        st.success("Dívida cadastrada com sucesso no Google Sheets!")
-        st.rerun()
+        try:
+          conexao = obter_conexao()
+          cursor = conexao.cursor()
+          cursor.execute(
+              """
+                        INSERT INTO dividas (credor, valor_total, juros_mensal, status)
+                        VALUES (%s, %s, %s, %s)
+                    """,
+              (credor, valor_total, juros_mensal, "Pendente"),
+          )
+          conexao.commit()
+          cursor.close()
+          conexao.close()
+          st.success("Dívida cadastrada com sucesso!")
+          st.rerun()
+        except Exception as e:
+          st.error(f"Erro ao salvar dívida: {e}")
       else:
         st.error("Preencha o credor e o valor total.")
 

@@ -2,5 +2,4 @@ streamlit
 pandas
 matplotlib
 openpyxl
-gspread
-google-auth
+psycopg2-binary
