@@ -44,24 +44,26 @@ with st.form("form_lancamento", clear_on_submit=True):
   if valor_final > 0:
       st.info(f"Valor a ser lançado: **{fmt_moeda(valor_final)}**")
 
-  usar_data_hoje = st.checkbox("Usar data de hoje", value=True)
-
-  # Lógica corrigida: 
-  # Se o checkbox estiver marcado, usa hoje. 
-  # Se estiver desmarcado, abre o calendário livre para qualquer data (passada ou futura).
-  if usar_data_hoje:
-    data_selecionada = datetime.now()
-    st.write(f"Data selecionada: **{data_selecionada.strftime('%d/%m/%Y')}** (Hoje)")
-  else:
-    data_selecionada = st.date_input("Selecione a Data (Passada ou Futura)", value=datetime.now())
-    st.write(f"Data selecionada: **{data_selecionada.strftime('%d/%m/%Y')}**")
+  # Campo de data limpo e direto: já vem com a data de hoje, mas é totalmente editável para passado ou futuro
+  data_hoje_str = datetime.now().strftime("%d/%m/%Y")
+  data_texto = st.text_input(
+      "Data do Lançamento (DD/MM/AAAA)",
+      value=data_hoje_str,
+      placeholder="Ex: 05/09/2026"
+  )
 
   enviar = st.form_submit_button("Salvar Lançamento")
 
   if enviar:
-    data_formatada = data_selecionada.strftime("%d/%m/%Y")
+    # Valida e converte a data digitada pelo usuário
+    try:
+        data_obj = datetime.strptime(data_texto.strip(), "%d/%m/%Y")
+        data_formatada = data_obj.strftime("%d/%m/%Y")
+        data_valida = True
+    except ValueError:
+        data_valida = False
 
-    if categoria and valor_final > 0:
+    if categoria and valor_final > 0 and data_valida:
       try:
         conexao = obter_conexao()
         cursor = conexao.cursor()
@@ -80,4 +82,4 @@ with st.form("form_lancamento", clear_on_submit=True):
       except Exception as e:
         st.error(f"Erro ao salvar: {e}")
     else:
-        st.error("Preencha a categoria e um valor válido.")
+        st.error("Preencha a categoria, um valor válido e uma data correta no formato DD/MM/AAAA.")
