@@ -1,3 +1,4 @@
+from datetime import datetime
 import pandas as pd
 import psycopg2
 import streamlit as st
@@ -82,8 +83,6 @@ with st.form("form_divida", clear_on_submit=True):
 st.divider()
 
 # Listagem e Gerenciamento de Dívidas Existentes
-st.markdown("### Suas Dívidas Ativas e Parcelamentos")
-
 try:
     conexao = obter_conexao()
     df_dividas = pd.read_sql_query("SELECT * FROM dividas ORDER BY id DESC", conexao)
@@ -92,6 +91,45 @@ except Exception:
     df_dividas = pd.DataFrame()
 
 if not df_dividas.empty:
+    # --- INDICADORES: SOMA TOTAL E PRAZO DE ENCERRAMENTO ---
+    st.markdown("### 📊 Indicadores Gerais das Dívidas")
+    
+    # Filtra apenas dívidas pendentes para os cálculos
+    df_pendentes = df_dividas[df_dividas["status"] == "Pendente"].copy()
+    
+    col_m1, col_m2 = st.columns(2)
+    
+    # 1. Somatório do valor total das dívidas pendentes
+    soma_dividas = pd.to_numeric(df_pendentes["valor_total"], errors="coerce").sum() if not df_pendentes.empty else 0.0
+    soma_fmt = f"R$ {soma_dividas:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    
+    with col_m1:
+        st.metric(label="💰 Valor Total das Dívidas Pendentes", value=soma_fmt)
+        
+    # 2. Prazo estimado para encerramento (baseado na dívida com maior número de parcelas pendentes)
+    prazo_texto = "Sem dívidas pendentes"
+    if not df_pendentes.empty:
+        max_parcelas = pd.to_numeric(df_pendentes["total_parcelas"], errors="coerce").max()
+        if pd.isna(max_parcelas) or max_parcelas < 1:
+            max_parcelas = 1
+            
+        hoje = datetime.now()
+        mes_futuro = hoje.month + int(max_parcelas)
+        ano_futuro = hoje.year + (mes_futuro // 12)
+        mes_futuro = mes_futuro % 12
+        if mes_futuro == 0:
+            mes_futuro = 12
+            ano_futuro -= 1
+            
+        prazo_texto = f"Aprox. {int(max_parcelas)} meses ({mes_futuro:02d}/{ano_futuro})"
+        
+    with col_m2:
+        st.metric(label="⏳ Prazo Estimado para Quitação Total", value=prazo_texto)
+
+    st.divider()
+
+    st.markdown("### Suas Dívidas Ativas e Parcelamentos")
+
     def fmt_moeda(v):
         return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
