@@ -4,7 +4,7 @@ import psycopg2
 import streamlit as st
 
 st.set_page_config(
-    page_title="Central de Lançamentos", page_icon="➕", layout="wide"
+    page_title="Central de Lançamentos & Orçamento", page_icon="➕", layout="wide"
 )
 
 
@@ -38,6 +38,15 @@ def garantir_tabelas():
         )
     """
     )
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS limites_categorias (
+            id SERIAL PRIMARY KEY,
+            categoria TEXT UNIQUE NOT NULL,
+            limite NUMERIC(10,2) NOT NULL
+        )
+    """
+    )
     conexao.commit()
     cursor.close()
     conexao.close()
@@ -47,10 +56,10 @@ def garantir_tabelas():
 
 garantir_tabelas()
 
-st.subheader("➕ Central de Lançamentos e Aportes")
+st.subheader("➕ Central de Lançamentos, Aportes e Orçamento")
 st.write(
-    "Escolha abaixo entre registrar um gasto/receita corriqueiro ou fazer o"
-    " seu aporte direto na reserva diversificada."
+    "Gerencie suas finanças, acompanhe os limites por categoria e faça"
+    " aportes na reserva com total controle."
 )
 
 
@@ -58,9 +67,13 @@ def fmt_moeda(v):
   return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
-# Abas para separar o dia a dia do investimento
-aba_lancamento, aba_aporte = st.tabs(
-    ["📝 Gasto ou Receita", "🛡️ Registrar Aporte na Reserva"]
+# As 3 abas oficiais do sistema
+aba_lancamento, aba_aporte, aba_limites = st.tabs(
+    [
+        "📝 Gasto ou Receita",
+        "🛡️ Registrar Aporte na Reserva",
+        "🚨 Limites e Semáforo de Gastos",
+    ]
 )
 
 # --- ABA 1: GASTO OU RECEITA ---
@@ -280,3 +293,120 @@ with aba_aporte:
     st.dataframe(df_tabela_bancos, use_container_width=True, hide_index=True)
   else:
     st.info("Nenhum aporte registrado para calcular os saldos por banco ainda.")
+
+# --- ABA 3: LIMITES E SEMÁFORO DE GASTOS ---
+with aba_limites:
+  st.markdown("### 🚨 Definir Limites de Gastos por Categoria")
+  st.write(
+      "Defina um teto mensal para cada categoria. O sistema monitorará seus"
+      " gastos automaticamente."
+  )
+
+  with st.form("form_limite", clear_on_submit=True):
+    col_l1, col_l2 = st.columns(2)
+    with col_l1:
+      cat_limite = st.text_input(
+          "Nome da Categoria (Ex: Alimentação, Lazer, Cartão)"
+      )
+    with col_l2:
+      val_limite = st.number_input(
+          "Limite Máximo Mensal (R$)",
+          min_value=1.0,
+          value=500.00,
+          step=50.0,
+          format="%.2f",
+      )
+
+    if st.form_submit_button("💾 Salvar / Atualizar Limite"):
+      if cat_limite.strip():
+        try:
+          conexao = obter_conexao()
+          cursor = conexao.cursor()
+          cursor.execute(
+              """
+                    INSERT INTO limites_categorias (categoria, limite)
+                    VALUES (%s, %s)
+                    ON CONFLICT (categoria) DO UPDATE SET limite = EXCLUDED.limite
+                    """,
+              (cat_limite.strip().capitalize(), val_limite),
+          )
+          conexao.commit()
+          cursor.close()
+          conexao.close()
+          st.success(
+              f"Limite para **{cat_limite.capitalize()}** definido com sucesso!"
+          )
+          st.rerun()
+        except Exception as e:
+          st.error(f"Erro ao salvar limite: {e}")
+      else:
+        st.error("Informe o nome da categoria.")
+
+  st.divider()
+  st.markdown("### 🚦 Semáforo de Orçamento (Acompanhamento Atual)")
+
+  try:
+    conexao = obter_conexao()
+    df_limites = pd.read_sql_query(
+        "SELECT categoria, limite FROM limites_categorias", conexao
+    )
+    df_despesas = pd.read_sql_query(
+        "SELECT categoria, valor FROM lancamentos WHERE tipo = 'Despesa'",
+        conexao,
+    )
+    conexao.close()
+  except Exception:
+    df_limites = pd.DataFrame(columns=["categoria", "limite"])
+    df_despesas = pd.DataFrame(columns=["categoria", "valor"])
+
+  if not df_limites.empty:
+    if not df_despesas.empty:
+      df_despesas["valor_num"] = pd.to_numeric(
+          df_despesas["valor"], errors="coerce"
+      ).fillna(0.0)
+      df_gastos_cat = (
+          df_despesas.groupby("categoria")["valor_num"].sum().reset_index()
+      )
+      df_gastos_cat["categoria_clean"] = (
+          df_gastos_cat["categoria"].str.strip().str.capitalize()
+      )
+    else:
+      df_gastos_cat = pd.DataFrame(columns=["categoria_clean", "valor_num"])
+
+    df_limites["categoria_clean"] = (
+        df_limites["categoria"].str.strip().str.capitalize()
+    )
+    df_comparativo = pd.merge(
+        df_limites, df_gastos_cat, on="categoria_clean", how="left"
+    ).fillna(0.0)
+
+    for index, row in df_comparativo.iterrows():
+      cat = row["categoria_clean"]
+      limite = row["limite"]
+      gasto = row["valor_num"]
+      porcentagem = (gasto / limite) * 100 if limite > 0 else 0
+
+      if porcentagem >= 100:
+        semaforo = "🔴 Estourado"
+      elif porcentagem >= 80:
+        semaforo = "🟡 Atenção (Próximo ao limite)"
+      else:
+        semaforo = "🟢 Seguro"
+
+      st.markdown(f"#### {cat} — {semaforo}")
+      col_m1, col_m2, col_m3 = st.columns(3)
+      with col_m1:
+        st.write(f"Gasto Atual: **{fmt_moeda(gasto)}**")
+      with col_m2:
+        st.write(f"Limite Teto: **{fmt_moeda(limite)}**")
+      with col_m3:
+        st.write(f"Comprometido: **{porcentagem:.1f}%**")
+
+      progresso = min(gasto / limite, 1.0) if limite > 0 else 0.0
+      st.progress(progresso)
+      st.markdown("---")
+  else:
+    st.info(
+        "Nenhum limite de categoria cadastrado ainda. Utilize o formulário acima"
+        " para definir suas metas de gastos!"
+    )
