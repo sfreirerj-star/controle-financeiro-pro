@@ -1,4 +1,5 @@
 from datetime import datetime
+import io
 import urllib.parse
 import pandas as pd
 import psycopg2
@@ -60,13 +61,13 @@ if not df_lancamentos.empty:
 
         df_exibicao = df_filtrado.copy()
         df_exibicao["valor_num"] = pd.to_numeric(df_exibicao["valor"], errors="coerce").fillna(0.0)
-        df_exibicao["valor"] = df_exibicao["valor_num"].apply(fmt_moeda)
+        df_exibicao["valor_formatado"] = df_exibicao["valor_num"].apply(fmt_moeda)
         
-        colunas_mostrar = ["id", "data", "tipo", "categoria", "descricao", "valor"]
+        colunas_mostrar = ["id", "data", "tipo", "categoria", "descricao", "valor_formatado"]
         
-        # Tabela perfeitamente alinhada com largura total e altura fixa (5 registros + barra de rolagem)
+        # Tabela perfeitamente alinhada com largura total e altura fixa
         st.dataframe(
-            df_exibicao[colunas_mostrar].set_index("id"), 
+            df_exibicao[colunas_mostrar].rename(columns={"valor_formatado": "valor"}).set_index("id"), 
             use_container_width=True,
             height=210
         )
@@ -75,21 +76,36 @@ if not df_lancamentos.empty:
         cat_str = ", ".join(filtro_categorias) if filtro_categorias else "Todas"
         st.info(f"📊 **Total dos lançamentos filtrados:** {fmt_moeda(total_filtrado)}")
 
-        # --- BOTÕES DE EXPORTAÇÃO E IMPRESSÃO (EXatamente ABAIXO DA TABELA E DO TOTAL) ---
-        col_exp1, col_exp2 = st.columns(2)
+        # --- BOTÕES DE EXPORTAÇÃO E IMPRESSÃO ---
+        col_exp1, col_exp2, col_exp3 = st.columns(3)
+        
+        df_para_exportar = df_exibicao[["id", "data", "tipo", "categoria", "descricao", "valor_num"]].rename(columns={"valor_num": "valor"})
         
         with col_exp1:
-            csv_data = df_exibicao[colunas_mostrar].to_csv(index=False).encode("utf-8")
+            csv_data = df_para_exportar.to_csv(index=False).encode("utf-8")
             st.download_button(
-                label="📥 Baixar Relatório (CSV / Excel)",
+                label="📥 Baixar em CSV",
                 data=csv_data,
-                file_name="relatorio_lancamentos.csv",
+                file_name=f"relatorio_lancamentos_{datetime.now().strftime('%Y%m%d')}.csv",
                 mime="text/csv",
                 use_container_width=True
             )
-            
+
         with col_exp2:
-            html_tabela = df_exibicao[colunas_mostrar].to_html(index=False, classes="table table-striped")
+            output_excel = io.BytesIO()
+            with pd.ExcelWriter(output_excel, engine='openpyxl') as writer:
+                df_para_exportar.to_excel(writer, index=False, sheet_name='Lancamentos')
+            excel_data = output_excel.getvalue()
+            st.download_button(
+                label="📊 Baixar em Excel (.xlsx)",
+                data=excel_data,
+                file_name=f"relatorio_lancamentos_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True
+            )
+            
+        with col_exp3:
+            html_tabela = df_para_exportar.to_html(index=False, classes="table table-striped")
             html_code = f"""<!DOCTYPE html>
 <html>
 <head>
@@ -115,14 +131,12 @@ if not df_lancamentos.empty:
 </body>
 </html>"""
             
-            # Codificação segura da URL para evitar vazamentos de código na tela
             html_encoded = urllib.parse.quote(html_code)
-            
             st.markdown(
                 f"""
                 <a href="data:text/html;charset=utf-8,{html_encoded}" target="_blank" style="text-decoration: none; display: block; width: 100%;">
                     <div style="background-color: #ff4b4b; color: white; text-align: center; padding: 10px 18px; border-radius: 4px; font-weight: bold; cursor: pointer; width: 100%;">
-                        🖨️ Imprimir / Salvar Relatório em PDF
+                        🖨️ Imprimir / PDF
                     </div>
                 </a>
                 """,
