@@ -333,7 +333,7 @@ with aba_simulador:
         "Tempo estimado COM o extra",
         f"{meses_com_extra:.1f} meses",
         delta=f"-{economia_meses:.1f} meses",
-        delta_value="inverse",
+        delta_color="inverse",
         help="Considerando o aporte mensal + os ganhos extras mensais.",
     )
   with c_res3:
@@ -353,6 +353,7 @@ with aba_simulador:
         f" rumo à liberdade financeira em **{economia_meses * 30:.0f} dias**"
         " (quase"
         f" **{economia_meses:.1f} meses** a menos de espera)!"
+    )
     )
 
 # --- ABA 3: CONSULTORIA DIÁRIA DE INVESTIMENTOS (MODERADO) ---
