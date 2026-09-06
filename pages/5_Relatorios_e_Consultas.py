@@ -21,10 +21,8 @@ except Exception as e:
     df_lancamentos = pd.DataFrame()
 
 if not df_lancamentos.empty:
-    # Tratamento da data para ordenações e filtros
     df_lancamentos["data_dt"] = pd.to_datetime(df_lancamentos["data"], format="%d/%m/%Y", errors="coerce")
     
-    # Criamos abas para organizar a tela de forma limpa
     aba1, aba2 = st.tabs(["🔍 Consulta, Filtros e Ações", "📅 Fechamento de Mês (Saldo Remanescente)"])
 
     # --- ABA 1: CONSULTA, FILTROS E AÇÕES ---
@@ -38,8 +36,9 @@ if not df_lancamentos.empty:
             filtro_tipo = st.selectbox("Filtrar por Tipo", tipos_disponiveis)
             
         with col_f2:
-            categorias_disponiveis = ["Todas"] + sorted(list(df_lancamentos["categoria"].dropna().unique()))
-            filtro_categoria = st.selectbox("Filtrar por Categoria", categorias_disponiveis)
+            # Caixa de seleção múltipla para categorias
+            categorias_disponiveis = sorted(list(df_lancamentos["categoria"].dropna().unique()))
+            filtro_categorias = st.multiselect("Filtrar por Categoria(s)", categorias_disponiveis, default=[])
             
         with col_f3:
             filtro_texto = st.text_input("Buscar na Descrição (Palavra-chave)")
@@ -50,8 +49,8 @@ if not df_lancamentos.empty:
         if filtro_tipo != "Todos":
             df_filtrado = df_filtrado[df_filtrado["tipo"] == filtro_tipo]
             
-        if filtro_categoria != "Todas":
-            df_filtrado = df_filtrado[df_filtrado["categoria"] == filtro_categoria]
+        if filtro_categorias:
+            df_filtrado = df_filtrado[df_filtrado["categoria"].isin(filtro_categorias)]
             
         if filtro_texto:
             df_filtrado = df_filtrado[df_filtrado["descricao"].str.contains(filtro_texto, case=False, na=False)]
@@ -65,17 +64,20 @@ if not df_lancamentos.empty:
         
         colunas_mostrar = ["id", "data", "tipo", "categoria", "descricao", "valor"]
         
-        # Exibe a tabela dos filtrados
-        st.dataframe(df_exibicao[colunas_mostrar].set_index("id"), use_container_width=True)
+        # Exibe a tabela com altura fixa (aproximadamente 5 linhas visíveis + rolagem)
+        st.dataframe(
+            df_exibicao[colunas_mostrar].set_index("id"), 
+            use_container_width=True,
+            height=220
+        )
         
-        # Métrica do total filtrado
         total_filtrado = df_exibicao["valor_num"].sum()
+        cat_str = ", ".join(filtro_categorias) if filtro_categorias else "Todas"
         st.info(f"📊 **Total dos lançamentos filtrados:** {fmt_moeda(total_filtrado)}")
 
         # --- BOTÕES DE EXPORTAÇÃO E IMPRESSÃO ---
         col_exp1, col_exp2 = st.columns(2)
         with col_exp1:
-            # Botão para baixar em CSV (compatível com Excel)
             csv_data = df_exibicao[colunas_mostrar].to_csv(index=False).encode("utf-8")
             st.download_button(
                 label="📥 Baixar Relatório Filtrado (CSV / Excel)",
@@ -84,7 +86,6 @@ if not df_lancamentos.empty:
                 mime="text/csv"
             )
         with col_exp2:
-            # Botão de impressão que abre o recurso nativo do navegador para salvar em PDF
             html_tabela = df_exibicao[colunas_mostrar].to_html(index=False, classes="table table-striped")
             html_code = f"""
                 <html>
@@ -101,7 +102,7 @@ if not df_lancamentos.empty:
                 </head>
                 <body>
                     <h2>Relatório de Lançamentos - Sistema Financeiro</h2>
-                    <p>Filtro Aplicado: Tipo ({filtro_tipo}) | Categoria ({filtro_categoria})</p>
+                    <p>Filtro Aplicado: Tipo ({filtro_tipo}) | Categorias ({cat_str})</p>
                     {html_tabela}
                     <div class="total">Total Filtrado: {fmt_moeda(total_filtrado)}</div>
                     <script>
@@ -205,7 +206,7 @@ if not df_lancamentos.empty:
                 "Saldo Remanescente (Acumulado)": df_fechamento["saldo_remanescente"].apply(fmt_moeda)
             })
             
-            st.dataframe(df_tabela_mensal, use_container_width=True)
+            st.dataframe(df_tabela_mensal, use_container_width=True, height=250)
         else:
             st.warning("Não há datas válidas o suficiente para gerar o fechamento mensal.")
 else:
