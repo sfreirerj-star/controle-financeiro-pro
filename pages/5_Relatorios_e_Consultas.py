@@ -11,7 +11,7 @@ def obter_conexao():
     return psycopg2.connect(st.secrets["DATABASE_URL"])
 
 st.subheader("📈 Relatórios, Consultas e Fechamento de Mês")
-st.write("Filtre seus lançamentos detalhadamente, gerencie registros, exporte relatórios e acompanhe o fechamento mês a mês.")
+st.write("Filtre seus lançamentos detalhadamente, gerencie registros, exporte relatórios, acompanhe o fechamento mês a mês e projete seu saldo futuro.")
 
 # Carregar todos os lançamentos do banco
 try:
@@ -25,7 +25,14 @@ except Exception as e:
 if not df_lancamentos.empty:
     df_lancamentos["data_dt"] = pd.to_datetime(df_lancamentos["data"], format="%d/%m/%Y", errors="coerce")
     
-    aba1, aba2 = st.tabs(["🔍 Consulta, Filtros e Ações", "📅 Fechamento de Mês (Saldo Remanescente)"])
+    aba1, aba2, aba3 = st.tabs([
+        "🔍 Consulta, Filtros e Ações", 
+        "📅 Fechamento de Mês (Saldo Remanescente)",
+        "🔮 Projeção de Saldo Futuro"
+    ])
+
+    def fmt_moeda(v):
+        return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
     # --- ABA 1: CONSULTA, FILTROS E AÇÕES ---
     with aba1:
@@ -56,16 +63,12 @@ if not df_lancamentos.empty:
         if filtro_texto:
             df_filtrado = df_filtrado[df_filtrado["descricao"].str.contains(filtro_texto, case=False, na=False)]
 
-        def fmt_moeda(v):
-            return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-
         df_exibicao = df_filtrado.copy()
         df_exibicao["valor_num"] = pd.to_numeric(df_exibicao["valor"], errors="coerce").fillna(0.0)
         df_exibicao["valor_formatado"] = df_exibicao["valor_num"].apply(fmt_moeda)
         
         colunas_mostrar = ["id", "data", "tipo", "categoria", "descricao", "valor_formatado"]
         
-        # Tabela perfeitamente alinhada com largura total e altura fixa
         st.dataframe(
             df_exibicao[colunas_mostrar].rename(columns={"valor_formatado": "valor"}).set_index("id"), 
             use_container_width=True,
@@ -230,5 +233,76 @@ if not df_lancamentos.empty:
             st.dataframe(df_tabela_mensal, use_container_width=True, height=210)
         else:
             st.warning("Não há datas válidas o suficiente para gerar o fechamento mensal.")
+
+    # --- ABA 3: PROJEÇÃO DE SALDO FUTURO ---
+    with aba3:
+        st.markdown("### 🔮 Simulador de Projeção de Saldo Futuro")
+        st.write("Projete o crescimento do seu saldo com base nas médias históricas de entradas e saídas ou defina valores personalizados.")
+
+        df_lancamentos["ano_mes"] = df_lancamentos["data_dt"].dt.to_period("M")
+        
+        if not df_lancamentos.empty and df_lancamentos["ano_mes"].notna().any():
+            # Cálculo de médias históricas mensais
+            df_rec_m = df_lancamentos[df_lancamentos["tipo"] == "Receita"].groupby("ano_mes")["valor"].sum()
+            df_desp_m = df_lancamentos[df_lancamentos["tipo"] == "Despesa"].groupby("ano_mes")["valor"].sum()
+            
+            media_entradas_hist = df_rec_m.mean() if not df_rec_m.empty else 0.0
+            media_saidas_hist = df_desp_m.mean() if not df_desp_m.empty else 0.0
+            
+            # Saldo atual acumulado real (último saldo remanescente)
+            df_receitas_tot = df_lancamentos[df_lancamentos["tipo"] == "Receita"].groupby("ano_mes")["valor"].sum().reset_index(name="entradas")
+            df_despesas_tot = df_lancamentos[df_lancamentos["tipo"] == "Despesa"].groupby("ano_mes")["valor"].sum().reset_index(name="saidas")
+            df_fech_tot = pd.merge(df_receitas_tot, df_despesas_tot, on="ano_mes", how="outer").fillna(0.0)
+            df_fech_tot["resultado"] = df_fech_tot["entradas"] - df_fech_tot["saidas"]
+            saldo_atual_base = df_fech_tot["resultado"].sum() if not df_fech_tot.empty else 0.0
+
+            col_p1, col_p2, col_p3 = st.columns(3)
+            with col_p1:
+                patrimonio_inicial_proj = st.number_input("Saldo Base Inicial (R$)", value=float(saldo_atual_base), step=100.0, format="%.2f")
+            with col_p2:
+                entrada_mensal_proj = st.number_input("Média de Entradas Mensais (R$)", value=float(media_entradas_hist), step=100.0, format="%.2f")
+            with col_p3:
+                saida_mensal_proj = st.number_input("Média de Saídas Mensais (R$)", value=float(media_saidas_hist), step=100.0, format="%.2f")
+
+            meses_proj = st.slider("Meses à Frente para Projeção", min_value=1, max_value=24, value=6, step=1)
+
+            # Gerar tabela de projeção
+            lista_proj = []
+            saldo_loop = patrimonio_inicial_proj
+            data_base = datetime.now()
+
+            for i in range(1, meses_proj + 1):
+                # Avançar mês a mês
+                mes_futuro = (data_base.replace(day=1) + pd.DateOffset(months=i)).strftime("%m/%Y")
+                resultado_mes_proj = entrada_mensal_proj - saida_mensal_proj
+                saldo_loop += resultado_mes_proj
+
+                lista_proj.append({
+                    "Mês Projeção": mes_futuro,
+                    "Entradas Previstas (R$)": round(entrada_mensal_proj, 2),
+                    "Saídas Previstas (R$)": round(saida_mensal_proj, 2),
+                    "Resultado do Mês (R$)": round(resultado_mes_proj, 2),
+                    "Saldo Acumulado Projetado (R$)": round(saldo_loop, 2)
+                })
+
+            df_projecao = pd.DataFrame(lista_proj)
+
+            st.write("")
+            st.markdown("#### 📊 Resultado da Projeção Mês a Mês")
+            
+            # Exibir formatado em moeda
+            df_proj_exibe = df_projecao.copy()
+            df_proj_exibe["Entradas Previstas (R$)"] = df_proj_exibe["Entradas Previstas (R$)"].apply(fmt_moeda)
+            df_proj_exibe["Saídas Previstas (R$)"] = df_proj_exibe["Saídas Previstas (R$)"].apply(fmt_moeda)
+            df_proj_exibe["Resultado do Mês (R$)"] = df_proj_exibe["Resultado do Mês (R$)"].apply(fmt_moeda)
+            df_proj_exibe["Saldo Acumulado Projetado (R$)"] = df_proj_exibe["Saldo Acumulado Projetado (R$)"].apply(fmt_moeda)
+
+            st.dataframe(df_proj_exibe.set_index("Mês Projeção"), use_container_width=True)
+
+            st.write("")
+            st.markdown("#### 📈 Gráfico de Evolução Patrimonial Projetada")
+            st.line_chart(df_projecao.set_index("Mês Projeção")[["Saldo Acumulado Projetado (R$)"]])
+        else:
+            st.info("Cadastre mais lançamentos com datas válidas para habilitar a projeção baseada em histórico.")
 else:
     st.info("Nenhum lançamento cadastrado no sistema para gerar relatórios.")
