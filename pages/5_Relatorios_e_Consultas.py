@@ -63,7 +63,7 @@ if not df_lancamentos.empty:
         
         colunas_mostrar = ["id", "data", "tipo", "categoria", "descricao", "valor"]
         
-        # Exibe a tabela principal com altura fixa estrita (forçando barra de rolagem de ~5 linhas)
+        # Tabela principal padronizada com largura total e altura fixa (barra de rolagem)
         st.dataframe(
             df_exibicao[colunas_mostrar].set_index("id"), 
             use_container_width=True,
@@ -74,8 +74,9 @@ if not df_lancamentos.empty:
         cat_str = ", ".join(filtro_categorias) if filtro_categorias else "Todas"
         st.info(f"📊 **Total dos lançamentos filtrados:** {fmt_moeda(total_filtrado)}")
 
-        # --- BOTÕES DE EXPORTAÇÃO E IMPRESSÃO (ALINHADOS EM COLUNAS ORGANIZADAS) ---
+        # --- BOTÕES DE EXPORTAÇÃO E IMPRESSÃO (ABAIXO DA TABELA, ALINHADOS) ---
         col_exp1, col_exp2 = st.columns(2)
+        
         with col_exp1:
             csv_data = df_exibicao[colunas_mostrar].to_csv(index=False).encode("utf-8")
             st.download_button(
@@ -85,6 +86,7 @@ if not df_lancamentos.empty:
                 mime="text/csv",
                 use_container_width=True
             )
+            
         with col_exp2:
             html_tabela = df_exibicao[colunas_mostrar].to_html(index=False, classes="table table-striped")
             html_code = f"""
@@ -173,7 +175,7 @@ if not df_lancamentos.empty:
                         conexao.commit()
                         cursor.close()
                         conexao.close()
-                        st.success("Excluído sim!" if False else "Excluído com sucesso!")
+                        st.success("Excluído com sucesso!")
                         st.rerun()
                     except Exception as e:
                         st.error(f"Erro: {e}")
