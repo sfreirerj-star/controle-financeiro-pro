@@ -1,4 +1,5 @@
 from datetime import datetime
+import urllib.parse
 import pandas as pd
 import psycopg2
 import streamlit as st
@@ -63,7 +64,7 @@ if not df_lancamentos.empty:
         
         colunas_mostrar = ["id", "data", "tipo", "categoria", "descricao", "valor"]
         
-        # Tabela principal padronizada com largura total e altura fixa (barra de rolagem)
+        # Tabela perfeitamente alinhada com largura total e altura fixa (5 registros + barra de rolagem)
         st.dataframe(
             df_exibicao[colunas_mostrar].set_index("id"), 
             use_container_width=True,
@@ -74,13 +75,13 @@ if not df_lancamentos.empty:
         cat_str = ", ".join(filtro_categorias) if filtro_categorias else "Todas"
         st.info(f"📊 **Total dos lançamentos filtrados:** {fmt_moeda(total_filtrado)}")
 
-        # --- BOTÕES DE EXPORTAÇÃO E IMPRESSÃO (ABAIXO DA TABELA, ALINHADOS) ---
+        # --- BOTÕES DE EXPORTAÇÃO E IMPRESSÃO (EXatamente ABAIXO DA TABELA E DO TOTAL) ---
         col_exp1, col_exp2 = st.columns(2)
         
         with col_exp1:
             csv_data = df_exibicao[colunas_mostrar].to_csv(index=False).encode("utf-8")
             st.download_button(
-                label="📥 Baixar Relatório Filtrado (CSV / Excel)",
+                label="📥 Baixar Relatório (CSV / Excel)",
                 data=csv_data,
                 file_name="relatorio_lancamentos.csv",
                 mime="text/csv",
@@ -89,33 +90,37 @@ if not df_lancamentos.empty:
             
         with col_exp2:
             html_tabela = df_exibicao[colunas_mostrar].to_html(index=False, classes="table table-striped")
-            html_code = f"""
-                <html>
-                <head>
-                    <title>Relatório de Lançamentos</title>
-                    <style>
-                        body {{ font-family: Arial, sans-serif; margin: 20px; }}
-                        h2 {{ color: #333; }}
-                        table {{ width: 100%; border-collapse: collapse; margin-top: 15px; }}
-                        th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
-                        th {{ background-color: #f2f2f2; }}
-                        .total {{ margin-top: 15px; font-weight: bold; font-size: 16px; }}
-                    </style>
-                </head>
-                <body>
-                    <h2>Relatório de Lançamentos - Sistema Financeiro</h2>
-                    <p>Filtro Aplicado: Tipo ({filtro_tipo}) | Categorias ({cat_str})</p>
-                    {html_tabela}
-                    <div class="total">Total Filtrado: {fmt_moeda(total_filtrado)}</div>
-                    <script>
-                        window.onload = function() {{ window.print(); }}
-                    </script>
-                </body>
-                </html>
-            """
+            html_code = f"""<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Relatório de Lançamentos</title>
+    <style>
+        body {{ font-family: Arial, sans-serif; margin: 30px; color: #333; }}
+        h2 {{ color: #111; border-bottom: 2px solid #ddd; padding-bottom: 10px; }}
+        table {{ width: 100%; border-collapse: collapse; margin-top: 20px; }}
+        th, td {{ border: 1px solid #ccc; padding: 10px; text-align: left; font-size: 14px; }}
+        th {{ background-color: #f5f5f5; }}
+        .total {{ margin-top: 20px; font-weight: bold; font-size: 18px; }}
+    </style>
+</head>
+<body>
+    <h2>Relatório de Lançamentos - Sistema Financeiro</h2>
+    <p><b>Filtro Aplicado:</b> Tipo ({filtro_tipo}) | Categorias ({cat_str})</p>
+    {html_tabela}
+    <div class="total">Total Filtrado: {fmt_moeda(total_filtrado)}</div>
+    <script>
+        window.onload = function() {{ window.print(); }}
+    </script>
+</body>
+</html>"""
+            
+            # Codificação segura da URL para evitar vazamentos de código na tela
+            html_encoded = urllib.parse.quote(html_code)
+            
             st.markdown(
                 f"""
-                <a href="data:text/html;charset=utf-8,{html_code}" target="_blank" style="text-decoration: none;">
+                <a href="data:text/html;charset=utf-8,{html_encoded}" target="_blank" style="text-decoration: none; display: block; width: 100%;">
                     <div style="background-color: #ff4b4b; color: white; text-align: center; padding: 10px 18px; border-radius: 4px; font-weight: bold; cursor: pointer; width: 100%;">
                         🖨️ Imprimir / Salvar Relatório em PDF
                     </div>
