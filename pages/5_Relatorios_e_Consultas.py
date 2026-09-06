@@ -36,7 +36,6 @@ if not df_lancamentos.empty:
             filtro_tipo = st.selectbox("Filtrar por Tipo", tipos_disponiveis)
             
         with col_f2:
-            # Caixa de seleção múltipla para categorias
             categorias_disponiveis = sorted(list(df_lancamentos["categoria"].dropna().unique()))
             filtro_categorias = st.multiselect("Filtrar por Categoria(s)", categorias_disponiveis, default=[])
             
@@ -64,18 +63,18 @@ if not df_lancamentos.empty:
         
         colunas_mostrar = ["id", "data", "tipo", "categoria", "descricao", "valor"]
         
-        # Exibe a tabela com altura fixa (aproximadamente 5 linhas visíveis + rolagem)
+        # Exibe a tabela principal com altura fixa estrita (forçando barra de rolagem de ~5 linhas)
         st.dataframe(
             df_exibicao[colunas_mostrar].set_index("id"), 
             use_container_width=True,
-            height=220
+            height=210
         )
         
         total_filtrado = df_exibicao["valor_num"].sum()
         cat_str = ", ".join(filtro_categorias) if filtro_categorias else "Todas"
         st.info(f"📊 **Total dos lançamentos filtrados:** {fmt_moeda(total_filtrado)}")
 
-        # --- BOTÕES DE EXPORTAÇÃO E IMPRESSÃO ---
+        # --- BOTÕES DE EXPORTAÇÃO E IMPRESSÃO (ALINHADOS EM COLUNAS ORGANIZADAS) ---
         col_exp1, col_exp2 = st.columns(2)
         with col_exp1:
             csv_data = df_exibicao[colunas_mostrar].to_csv(index=False).encode("utf-8")
@@ -83,7 +82,8 @@ if not df_lancamentos.empty:
                 label="📥 Baixar Relatório Filtrado (CSV / Excel)",
                 data=csv_data,
                 file_name="relatorio_lancamentos.csv",
-                mime="text/csv"
+                mime="text/csv",
+                use_container_width=True
             )
         with col_exp2:
             html_tabela = df_exibicao[colunas_mostrar].to_html(index=False, classes="table table-striped")
@@ -113,10 +113,10 @@ if not df_lancamentos.empty:
             """
             st.markdown(
                 f"""
-                <a href="data:text/html;charset=utf-8,{html_code}" target="_blank">
-                    <button style="background-color: #ff4b4b; color: white; border: none; padding: 9px 18px; border-radius: 4px; cursor: pointer; font-weight: bold;">
+                <a href="data:text/html;charset=utf-8,{html_code}" target="_blank" style="text-decoration: none;">
+                    <div style="background-color: #ff4b4b; color: white; text-align: center; padding: 10px 18px; border-radius: 4px; font-weight: bold; cursor: pointer; width: 100%;">
                         🖨️ Imprimir / Salvar Relatório em PDF
-                    </button>
+                    </div>
                 </a>
                 """,
                 unsafe_allow_html=True
@@ -173,7 +173,7 @@ if not df_lancamentos.empty:
                         conexao.commit()
                         cursor.close()
                         conexao.close()
-                        st.success("Excluído com sucesso!")
+                        st.success("Excluído sim!" if False else "Excluído com sucesso!")
                         st.rerun()
                     except Exception as e:
                         st.error(f"Erro: {e}")
@@ -206,7 +206,7 @@ if not df_lancamentos.empty:
                 "Saldo Remanescente (Acumulado)": df_fechamento["saldo_remanescente"].apply(fmt_moeda)
             })
             
-            st.dataframe(df_tabela_mensal, use_container_width=True, height=250)
+            st.dataframe(df_tabela_mensal, use_container_width=True, height=210)
         else:
             st.warning("Não há datas válidas o suficiente para gerar o fechamento mensal.")
 else:
