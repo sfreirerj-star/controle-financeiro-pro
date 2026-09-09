@@ -14,15 +14,37 @@ st.markdown(
 )
 
 
-# Função para carregar os dados direto do Supabase via secrets
+# Função flexível para buscar a URL do banco no secrets.toml
 def carregar_dados():
   try:
-    # Pega a DATABASE_URL configurada no seu secrets.toml
-    db_url = st.secrets["connections"]["postgresql"]["url"]
+    db_url = None
+    # Tenta diferentes formas comuns de chaves no secrets.toml
+    if "DATABASE_URL" in st.secrets:
+      db_url = st.secrets["DATABASE_URL"]
+    elif "database_url" in st.secrets:
+      db_url = st.secrets["database_url"]
+    elif (
+        "connections" in st.secrets
+        and "postgresql" in st.secrets["connections"]
+    ):
+      db_url = st.secrets["connections"]["postgresql"]["url"]
+    else:
+      # Varredura genérica nas chaves disponíveis
+      for key in st.secrets:
+        if isinstance(st.secrets[key], str) and "postgresql://" in st.secrets[key]:
+          db_url = st.secrets[key]
+          break
+
+    if not db_url:
+      st.error(
+          "⚠️ A chave de conexão com o banco não foi encontrada no arquivo"
+          " `.streamlit/secrets.toml`. Verifique o nome da variável de"
+          " conexão."
+      )
+      return pd.DataFrame(), pd.DataFrame()
+
     conn = psycopg2.connect(db_url)
-    df_lancamentos = pd.read_sql(
-        "SELECT * FROM lancamentos;", con=conn
-    )  # Colunas: tipo, categoria, valor, data
+    df_lancamentos = pd.read_sql("SELECT * FROM lancamentos;", con=conn)
     df_dividas = pd.read_sql("SELECT * FROM dividas;", con=conn)
     conn.close()
     return df_lancamentos, df_dividas
