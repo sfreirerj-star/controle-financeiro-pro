@@ -154,17 +154,17 @@ else:
     meses_reserva = quanto_falta / novo_saldo_mensal
 
     st.info(
-        f"📈 **Previsão de Sucesso:** Com a economia gerando R$"
-        f" {novo_saldo_mensal:,.2f} livres por mês e aplicando o extra do"
-        f" PROEIS logo no início, você atinge a sua meta completa de reserva de"
+        "Previsão de Sucesso: Com a economia gerando R$ "
+        f"{novo_saldo_mensal:,.2f} livres por mês e aplicando o extra do"
+        " PROEIS logo no início, você atinge a sua meta completa de reserva de"
         f" segurança (R$ {meta_reserva_futura:,.2f}) em aproximadamente"
-        f" **{meses_reserva:.1f} meses** após a mudança em dezembro!"
+        f" {meses_reserva:.1f} meses após a mudança em dezembro!"
     )
   else:
     st.warning(
-        "⚠️ **Atenção:** O saldo mensal projetado está zerado ou negativo. Para"
+        "Atenção: O saldo mensal projetado está zerado ou negativo. Para"
         " calcular o tempo estimado da reserva, marque a opção acima para"
-        " **Entregar o imóvel alugado em Dezembro**, liberando assim a folga"
+        " Entregar o imóvel alugado em Dezembro, liberando assim a folga"
         " financeira necessária."
     )
 
