@@ -148,24 +148,27 @@ else:
           f" segurança!"
       )
 
-  # Validação estrita para evitar divisão por zero
+  # Validação estrita substituindo o st.info por markdown limpo para manter a fonte padrão
   if novo_saldo_mensal > 1.0:
     quanto_falta = max(0.0, meta_reserva_futura - valor_proeis)
     meses_reserva = quanto_falta / novo_saldo_mensal
 
-    st.info(
-        "Previsão de Sucesso: Com a economia gerando R$ "
-        f"{novo_saldo_mensal:,.2f} livres por mês e aplicando o extra do"
-        " PROEIS logo no início, você atinge a sua meta completa de reserva de"
-        f" segurança (R$ {meta_reserva_futura:,.2f}) em aproximadamente"
-        f" {meses_reserva:.1f} meses após a mudança em dezembro!"
+    st.markdown(
+        f"""
+        <div style="padding: 15px; border-radius: 8px; background-color: rgba(0, 150, 255, 0.1); border-left: 5px solid #0096ff; margin-top: 15px;">
+            <b>Previsão de Sucesso:</b> Com a economia gerando <b>R$ {novo_saldo_mensal:,.2f}</b> livres por mês e aplicando o extra do PROEIS logo no início, você atinge a sua meta completa de reserva de segurança (<b>R$ {meta_reserva_futura:,.2f}</b>) em aproximadamente <b>{meses_reserva:.1f} meses</b> após a mudança em dezembro!
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
   else:
-    st.warning(
-        "Atenção: O saldo mensal projetado está zerado ou negativo. Para"
-        " calcular o tempo estimado da reserva, marque a opção acima para"
-        " Entregar o imóvel alugado em Dezembro, liberando assim a folga"
-        " financeira necessária."
+    st.markdown(
+        """
+        <div style="padding: 15px; border-radius: 8px; background-color: rgba(255, 165, 0, 0.1); border-left: 5px solid #ffa500; margin-top: 15px;">
+            <b>Atenção:</b> O saldo mensal projetado está zerado ou negativo. Para calcular o tempo estimado da reserva, marque a opção acima para <b>Entregar o imóvel alugado em Dezembro</b>, liberando assim a folga financeira necessária.
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
 
   st.divider()
