@@ -106,15 +106,6 @@ else:
     if not aluguel_match.empty:
       aluguel_atual = aluguel_match["valor"].sum()
 
-    condominio_match = df_despesas[
-        df_despesas["categoria"].str.contains("Condomínio", case=False, na=False)
-    ]
-    condominio_atual = (
-        condominio_match["valor"].sum() if not condominio_match.empty else 0.0
-    )
-  else:
-    condominio_atual = 0.0
-
   col_tr1, col_tr2 = st.columns(2)
 
   with col_tr1:
@@ -133,7 +124,9 @@ else:
 
     nova_despesa_total = despesas_total - economia_aluguel
     novo_saldo_mensal = receitas_total - nova_despesa_total
-    meta_reserva_futura = (nova_despesa_total / 30) * 180  # 6 meses aproximados
+    meta_reserva_futura = (
+        nova_despesa_total / 30
+    ) * 180  # Meta de 6 meses das novas despesas
 
   with col_tr2:
     st.markdown("#### 🎯 Projeção de Caixa (A partir de Dezembro)")
@@ -155,18 +148,23 @@ else:
           f" segurança!"
       )
 
+  # Tratamento seguro para o cálculo de meses (evita divisão por zero ou números negativos)
   if novo_saldo_mensal > 0:
-    meses_reserva = (
-        (meta_reserva_futura - valor_proeis) / novo_saldo_mensal
-        if (meta_reserva_futura - valor_proeis) > 0
-        else 0
-    )
+    quanto_falta = max(0.0, meta_reserva_futura - valor_proeis)
+    meses_reserva = quanto_falta / novo_saldo_mensal
+
     st.info(
-        f"📈 **Previsão de Sucesso:** Com a economia do aluguel gerando R$"
+        f"📈 **Previsão de Sucesso:** Com a economia gerando R$"
         f" {novo_saldo_mensal:,.2f} livres por mês e aplicando o extra do"
         f" PROEIS logo no início, você atinge a sua meta completa de reserva de"
-        f" segurança em cerca de **{max(1, meses_reserva):.1f} meses** após a"
-        f" mudança!"
+        f" segurança (R$ {meta_reserva_futura:,.2f}) em aproximadamente"
+        f" **{meses_reserva:.1f} meses** após a mudança em dezembro!"
+    )
+  else:
+    st.warning(
+        "⚠️ Para calcular o prazo da reserva, é necessário que o saldo mensal"
+        " líquido seja positivo (ative a opção de entregar o aluguel em"
+        " dezembro)."
     )
 
   st.divider()
@@ -194,11 +192,3 @@ else:
     )
 
   st.divider()
-
-  # Plano de Ação Estratégico
-  st.subheader("🛡️ Plano Diretor de Transição Patrimonial")
-  st.markdown(f"""
-    1. **Foco na Data de Dezembro:** Mantenha a disciplina financeira atual até completar o prazo contratual do Quinto Andar. A própria inércia do contrato resolve o problema estrutural do aluguel sem multas rescisórias abusivas.
-    2. **Blindagem do PROEIS (R$ {valor_proeis:,.2f}):** Quando esse valor for creditado, **não o misture com a conta corrente comum**. Destine-o imediatamente para uma aplicação de renda fixa com liquidez diária (criando a fundação da sua reserva).
-    3. **Aproveitamento do Imóvel Próprio:** A mudança para o seu apartamento em dezembro converterá um custo perdido (aluguel a terceiros) em amortização ou permanência no seu próprio patrimônio, reduzindo drasticamente o escoamento de caixa.
-    """)
