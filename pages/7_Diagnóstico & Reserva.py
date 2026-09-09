@@ -1,6 +1,6 @@
 import pandas as pd
+import psycopg2
 import streamlit as st
-import streamlit.connections as sc
 
 st.set_page_config(
     page_title="Diagnóstico & Reserva", page_icon="🎯", layout="wide"
@@ -13,16 +13,26 @@ st.markdown(
     " segurança com base em metodologias globais de gestão financeira."
 )
 
-# Conexão com o Banco de Dados PostgreSQL no Supabase via st.secrets
-try:
-  conn = st.connection("postgresql", type="sql")
-  df_lancamentos = conn.query(
-      "SELECT * FROM lancamentos;", ttl=0
-  )  # Colunas esperadas: tipo, categoria, valor, data
-  df_dividas = conn.query("SELECT * FROM dividas;", ttl=0)
-except Exception as e:
-  st.error(f"Erro ao conectar com o banco de dados: {e}")
-  st.stop()
+
+# Função para carregar os dados direto do Supabase via secrets
+def carregar_dados():
+  try:
+    # Pega a DATABASE_URL configurada no seu secrets.toml
+    db_url = st.secrets["connections"]["postgresql"]["url"]
+    conn = psycopg2.connect(db_url)
+    df_lancamentos = pd.read_sql(
+        "SELECT * FROM lancamentos;", con=conn
+    )  # Colunas: tipo, categoria, valor, data
+    df_dividas = pd.read_sql("SELECT * FROM dividas;", con=conn)
+    conn.close()
+    return df_lancamentos, df_dividas
+  except Exception as e:
+    st.error(f"Erro ao conectar com o banco de dados na nuvem: {e}")
+    return pd.DataFrame(), pd.DataFrame()
+
+
+# Carregando os dados
+df_lancamentos, df_dividas = carregar_dados()
 
 if df_lancamentos.empty:
   st.info("Nenhum lançamento encontrado para gerar o diagnóstico no momento.")
