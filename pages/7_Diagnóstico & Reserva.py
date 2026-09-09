@@ -1,45 +1,43 @@
 import pandas as pd
 import streamlit as st
+import streamlit.connections as sc
 
+st.set_page_config(
+    page_title="Diagnóstico & Reserva", page_icon="🎯", layout="wide"
+)
 
-def render_aba_diagnostico(conn):
-  st.header("🎯 Diagnóstico de Gargalos & Estratégia de Reserva")
-  st.markdown(
-      "Esta aba analisa os seus lançamentos e dívidas para identificar onde"
-      " sua renda está escoando e traça a rota ideal para construir sua"
-      " reserva de segurança com base em metodologias globais de gestão"
-      " financeira."
-  )
+st.header("🎯 Diagnóstico de Gargalos & Estratégia de Reserva")
+st.markdown(
+    "Esta aba analisa os seus lançamentos e dívidas para identificar onde sua"
+    " renda está escoando e traça a rota ideal para construir sua reserva de"
+    " segurança com base em metodologias globais de gestão financeira."
+)
 
-  try:
-    # Carregando dados reais do banco PostgreSQL (Supabase)
-    df_lancamentos = pd.read_sql(
-        "SELECT * FROM lancamentos", con=conn
-    )  # Colunas esperadas: tipo, categoria, valor, data
-    df_dividas = pd.read_sql("SELECT * FROM dividas", con=conn)
-  except Exception as e:
-    st.error(
-        f"Erro ao carregar dados do banco para o diagnóstico: {e}"
-    )
-    return
+# Conexão com o Banco de Dados PostgreSQL no Supabase via st.secrets
+try:
+  conn = st.connection("postgresql", type="sql")
+  df_lancamentos = conn.query(
+      "SELECT * FROM lancamentos;", ttl=0
+  )  # Colunas esperadas: tipo, categoria, valor, data
+  df_dividas = conn.query("SELECT * FROM dividas;", ttl=0)
+except Exception as e:
+  st.error(f"Erro ao conectar com o banco de dados: {e}")
+  st.stop()
 
-  if df_lancamentos.empty:
-    st.info(
-        "Nenhum lançamento encontrado para gerar o diagnóstico no momento."
-    )
-    return
-
+if df_lancamentos.empty:
+  st.info("Nenhum lançamento encontrado para gerar o diagnóstico no momento.")
+else:
   # Tratamento de dados
   df_lancamentos["valor"] = pd.to_numeric(
       df_lancamentos["valor"], errors="coerce"
   ).fillna(0.0)
 
-  receitas_total = df_lancamentos[df_lancamentos["tipo"].str.lower() == "receita"][
-      "valor"
-  ].sum()
-  despesas_total = df_lancamentos[df_lancamentos["tipo"].str.lower() == "despesa"][
-      "valor"
-  ].sum()
+  receitas_total = df_lancamentos[
+      df_lancamentos["tipo"].str.lower() == "receita"
+  ]["valor"].sum()
+  despesas_total = df_lancamentos[
+      df_lancamentos["tipo"].str.lower() == "despesa"
+  ]["valor"].sum()
   saldo_atual = receitas_total - despesas_total
 
   # Métricas Gerais
@@ -49,9 +47,11 @@ def render_aba_diagnostico(conn):
   col3.metric(
       "Resultado Líquido",
       f"R$ {saldo_atual:,.2f}",
-      delta=f"{(saldo_atual/receitas_total)*100:.1f}% da Receita"
-      if receitas_total > 0
-      else "0%",
+      delta=(
+          f"{(saldo_atual/receitas_total)*100:.1f}% da Receita"
+          if receitas_total > 0
+          else "0%"
+      ),
   )
 
   st.divider()
@@ -98,14 +98,20 @@ def render_aba_diagnostico(conn):
 
   custo_mensal_estimado = (
       despesas_total / max(1, len(df_lancamentos["data"].unique()) // 30)
-  )  # Estimativa base
+  )
   meta_reserva = custo_mensal_estimado * 6
+
+  gargalo_nome = (
+      maior_gargalo["categoria"]
+      if "maior_gargalo" in locals() and maior_gargalo is not None
+      else "principal"
+  )
 
   st.markdown(f"""
     Para atingir a tranquilidade financeira e blindar o seu patrimônio contra imprevistos, siga rigorosamente o plano de 4 etapas fundamentais:
     
     1. **Inverta a Lógica de Poupança (Pay Yourself First):** O erro fatal é investir o que sobra. Defina que **20%** de toda receita líquida vai direto para a reserva no **mesmo dia** em que o dinheiro entra.
-    2. **Ataque Cirúrgico no Gargalo:** Reduza em pelo menos 15% os gastos na categoria **{maior_gargalo['categoria'] if 'maior_gargalo' in locals() and maior_gargalo is not None else 'principal'}** identificada acima.
+    2. **Ataque Cirúrgico no Gargalo:** Reduza em pelo menos 15% os gastos na categoria **{gargalo_nome}** identificada acima.
     3. **Alocação de Longo Prazo da Reserva:** O montante da reserva deve ser guardado em aplicações de **Renda Fixa com Liquidez Diária** (Tesouro Selic ou CDBs 100% do CDI com liquidez imediata), garantindo que o dinheiro renda acima da inflação sem risco de perda de capital.
     4. **Meta de Alvo (6 Meses):** Com base no seu volume de despesas, sua meta ideal de reserva de segurança é de aproximadamente **R$ {meta_reserva:,.2f}**.
     """)
