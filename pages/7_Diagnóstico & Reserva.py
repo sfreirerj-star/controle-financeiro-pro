@@ -148,7 +148,7 @@ else:
           f" segurança!"
       )
 
-  # Validação estrita para evitar divisão por zero ou números negativos malucos
+  # Validação estrita para evitar divisão por zero
   if novo_saldo_mensal > 1.0:
     quanto_falta = max(0.0, meta_reserva_futura - valor_proeis)
     meses_reserva = quanto_falta / novo_saldo_mensal
