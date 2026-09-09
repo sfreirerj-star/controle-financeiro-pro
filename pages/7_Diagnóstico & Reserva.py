@@ -139,7 +139,7 @@ else:
     st.metric(
         "Novo Saldo Líquido Mensal",
         f"R$ {novo_saldo_mensal:,.2f}",
-        delta=f"Folga real garantida por mês!",
+        delta="Folga real garantida por mês!",
     )
     if incluir_proeis:
       st.success(
@@ -148,8 +148,8 @@ else:
           f" segurança!"
       )
 
-  # Tratamento seguro para o cálculo de meses (evita divisão por zero ou números negativos)
-  if novo_saldo_mensal > 0:
+  # Validação estrita para evitar divisão por zero ou números negativos malucos
+  if novo_saldo_mensal > 1.0:
     quanto_falta = max(0.0, meta_reserva_futura - valor_proeis)
     meses_reserva = quanto_falta / novo_saldo_mensal
 
@@ -162,9 +162,10 @@ else:
     )
   else:
     st.warning(
-        "⚠️ Para calcular o prazo da reserva, é necessário que o saldo mensal"
-        " líquido seja positivo (ative a opção de entregar o aluguel em"
-        " dezembro)."
+        "⚠️ **Atenção:** O saldo mensal projetado está zerado ou negativo. Para"
+        " calcular o tempo estimado da reserva, marque a opção acima para"
+        " **Entregar o imóvel alugado em Dezembro**, liberando assim a folga"
+        " financeira necessária."
     )
 
   st.divider()
@@ -192,3 +193,11 @@ else:
     )
 
   st.divider()
+
+  # Plano de Ação Estratégico
+  st.subheader("🛡️ Plano Diretor de Transição Patrimonial")
+  st.markdown(f"""
+    1. **Foco na Data de Dezembro:** Mantenha a disciplina financeira atual até completar o prazo contratual do Quinto Andar. A própria inércia do contrato resolve o problema estrutural do aluguel sem multas rescisórias abusivas.
+    2. **Blindagem do PROEIS (R$ {valor_proeis:,.2f}):** Quando esse valor for creditado, **não o misture com a conta corrente comum**. Destine-o imediatamente para uma aplicação de renda fixa com liquidez diária (criando a fundação da sua reserva).
+    3. **Aproveitamento do Imóvel Próprio:** A mudança para o seu apartamento em dezembro converterá um custo perdido (aluguel a terceiros) em permanência no seu próprio patrimônio, reduzindo drasticamente o escoamento de caixa.
+    """)
