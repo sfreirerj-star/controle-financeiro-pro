@@ -157,22 +157,33 @@ with aba_desafio:
       )
     with col_a3:
       locais_disponiveis = [
+          "Banco Itaú",
+          "Nomad (Investimentos em Dólar)",
           "Sofisa Direto (CDB 105% CDI)",
           "Banco Inter (CDB Liquidez Diária)",
           "Nubank (Caixinha / RDB 100% CDI)",
           "Tesouro Selic (Tesouro Direto)",
-          "Banco XP / Rico (CDB ou LCI)",
           "Outro (Personalizado)",
       ]
       local_selecionado = st.selectbox(
           "Local da Aplicação", locais_disponiveis
       )
 
-    local_aporte = local_selecionado
-    if local_selecionado == "Outro (Personalizado)":
-      local_aporte = st.text_input("Especifique o Banco / Corretora")
+    local_personalizado = st.text_input(
+        "Se selecionou 'Outro (Personalizado)' acima, digite o nome do Banco ou"
+        " Corretora:"
+    )
 
     if st.form_submit_button("💾 Salvar Aporte no Desafio"):
+      if local_selecionado == "Outro (Personalizado)":
+        local_aporte = (
+            local_personalizado.strip()
+            if local_personalizado.strip()
+            else "Outro"
+        )
+      else:
+        local_aporte = local_selecionado
+
       try:
         datetime.strptime(data_aporte.strip(), "%d/%m/%Y")
         conexao = obter_conexao()
@@ -180,7 +191,7 @@ with aba_desafio:
         cursor.execute(
             "INSERT INTO desafio_aportes (data, valor, local_aplicacao) VALUES"
             " (%s, %s, %s)",
-            (data_aporte.strip(), valor_aporte, local_aporte.strip()),
+            (data_aporte.strip(), valor_aporte, local_aporte),
         )
         conexao.commit()
         cursor.close()
@@ -390,7 +401,6 @@ with aba_simulador:
       step=6,
   )
 
-  # Cálculo mês a mês com juros compostos
   taxa_mensal = (1 + (taxa_cdi_anual / 100.0)) ** (1 / 12) - 1
 
   lista_projecao = []
@@ -454,22 +464,25 @@ with aba_orientacao:
 
   data_instituicoes = {
       "Instituição / Corretora": [
+          "Banco Itaú",
+          "Nomad (Global)",
           "Sofisa Direto",
           "Banco Inter",
           "Tesouro Direto",
-          "XP / Rico / Clear",
       ],
       "Produto Recomendado": [
+          "CDBs e Fundos DI",
+          "Investimento Internacional em Dólar",
           "CDB Liquidez Diária (105% CDI)",
           "CDB Mais Limite / Liquidez Diária",
           "Tesouro Selic 2029 / 2031",
-          "LCIs / LCAs com Liquidez (Isentas de IR)",
       ],
       "Vantagem para Reserva": [
+          "Solidez do maior banco privado do Brasil",
+          "Diversificação cambial geográfica",
           "Excelente taxa para pós-fixado com FGC",
           "Praticidade e solidez de banco múltiplo",
           "Segurança soberana máxima do governo",
-          "Isenção de Imposto de Renda em LCIs",
       ],
   }
   st.dataframe(
@@ -479,10 +492,8 @@ with aba_orientacao:
   st.markdown("#### 💡 Estratégia de Diversificação (Regra dos Ovos)")
   st.info(
       "📌 **Dica de Ouro:** Dividir os aportes entre 2 ou 3 instituições"
-      " diferentes (por exemplo, um pouco no Sofisa Direto e um pouco no"
-      " Inter ou Tesouro) protege seu patrimônio, garante que você aproveite"
-      " taxas promocionais distintas e mantém o valor total sempre dentro do"
-      " limite de cobertura do FGC (R$ 250 mil por instituição)."
+      " diferentes (por exemplo, Banco Itaú, Nomad e Sofisa) protege seu"
+      " patrimônio, garante taxas competitivas e mantém o valor protegido."
   )
 
   st.divider()
