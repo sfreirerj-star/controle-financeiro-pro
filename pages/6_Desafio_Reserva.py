@@ -166,12 +166,13 @@ with aba_desafio:
           "Outro (Personalizado)",
       ]
       local_selecionado = st.selectbox(
-          "Local da Aplicação", locais_disponiveis
+          "Local da Aplicação", locais_disponiveis, key="novo_local"
       )
 
     local_personalizado = st.text_input(
         "Se selecionou 'Outro (Personalizado)' acima, digite o nome do Banco ou"
-        " Corretora:"
+        " Corretora:",
+        key="novo_outro",
     )
 
     if st.form_submit_button("💾 Salvar Aporte no Desafio"):
@@ -196,15 +197,126 @@ with aba_desafio:
         conexao.commit()
         cursor.close()
         conexao.close()
-        st.success(
-            "Aporte registrado com sucesso! Ele foi abatido do seu saldo"
-            " corrente e somado aos investimentos."
-        )
+        st.success("Aporte registrado com sucesso!")
         st.rerun()
       except ValueError:
         st.error("Data inválida. Utilize o formato DD/MM/AAAA.")
       except Exception as e:
         st.error(f"Erro ao salvar: {e}")
+
+  st.divider()
+
+  # --- SEÇÃO DE GERENCIAMENTO (EDITAR / EXCLUIR) ---
+  st.markdown("### ✏️ Gerenciar, Corrigir ou Excluir Lançamentos")
+  if not df_aportes.empty:
+    ids_disponiveis = df_aportes["id"].tolist()
+    id_selecionado = st.selectbox(
+        "Selecione o ID do lançamento que deseja alterar ou excluir:",
+        ids_disponiveis,
+    )
+
+    # Buscar dados do ID selecionado para preencher o formulário de edição
+    dados_atual = df_aportes[df_aportes["id"] == id_selecionado].iloc[0]
+
+    with st.form("form_editar_aporte"):
+      st.write(f"Editando o Lançamento ID: **{id_selecionado}**")
+      col_e1, col_e2, col_e3 = st.columns(3)
+      with col_e1:
+        nova_data = st.text_input(
+            "Data (DD/MM/AAAA)", value=str(dados_atual["data"])
+        )
+      with col_e2:
+        novo_valor = st.number_input(
+            "Valor (R$)",
+            min_value=1.0,
+            value=float(dados_atual["valor_num"]),
+            step=10.0,
+            format="%.2f",
+        )
+      with col_e3:
+        local_atual = str(dados_atual["local_aplicacao"])
+        locais_edicao = [
+            "Banco Itaú",
+            "Nomad (Investimentos em Dólar)",
+            "Sofisa Direto (CDB 105% CDI)",
+            "Banco Inter (CDB Liquidez Diária)",
+            "Nubank (Caixinha / RDB 100% CDI)",
+            "Tesouro Selic (Tesouro Direto)",
+            "Outro (Personalizado)",
+        ]
+        # Se o local salvo não estiver na lista padrão, assume "Outro"
+        idx_default = (
+            locais_edicao.index(local_atual)
+            if local_atual in locais_edicao
+            else len(locais_edicao) - 1
+        )
+        novo_local_sel = st.selectbox(
+            "Local da Aplicação",
+            locais_edicao,
+            index=idx_default,
+            key="edit_local",
+        )
+
+      novo_outro_txt = st.text_input(
+          "Se 'Outro (Personalizado)', digite o nome correto:",
+          value=local_atual if idx_default == len(locais_edicao) - 1 else "",
+          key="edit_outro",
+      )
+
+      col_btn1, col_btn2 = st.columns(2)
+      with col_btn1:
+        salvar_edicao = st.form_submit_button(
+            "🔄 Salvar Alterações do Lançamento"
+        )
+      with col_btn2:
+        excluir_lancamento = st.form_submit_button(
+            "🗑️ Excluir Este Lançamento"
+        )
+
+      if salvar_edicao:
+        if novo_local_sel == "Outro (Personalizado)":
+          local_final = (
+              novo_outro_txt.strip() if novo_outro_txt.strip() else "Outro"
+          )
+        else:
+          local_final = novo_local_sel
+
+        try:
+          datetime.strptime(nova_data.strip(), "%d/%m/%Y")
+          conexao = obter_conexao()
+          cursor = conexao.cursor()
+          cursor.execute(
+              "UPDATE desafio_aportes SET data = %s, valor = %s,"
+              " local_aplicacao = %s WHERE id = %s",
+              (nova_data.strip(), novo_valor, local_final, int(id_selecionado)),
+          )
+          conexao.commit()
+          cursor.close()
+          conexao.close()
+          st.success(
+              f"Lançamento ID {id_selecionado} atualizado com sucesso!"
+          )
+          st.rerun()
+        except ValueError:
+          st.error("Data inválida. Utilize o formato DD/MM/AAAA.")
+        except Exception as e:
+          st.error(f"Erro ao atualizar: {e}")
+
+      if excluir_lancamento:
+        try:
+          conexao = obter_conexao()
+          cursor = conexao.cursor()
+          cursor.execute(
+              "DELETE FROM desafio_aportes WHERE id = %s",
+              (int(id_selecionado),),
+          )
+          conexao.commit()
+          cursor.close()
+          conexao.close()
+          st.warning(f"Lançamento ID {id_selecionado} excluído com sucesso!")
+          st.rerun()
+        except Exception as e:
+          st.error(f"Erro ao excluir: {e}")
 
   st.divider()
 
@@ -227,10 +339,7 @@ with aba_desafio:
     ].rename(columns={"local_aplicacao": "Instituição / Local"})
     st.dataframe(df_tabela_bancos, use_container_width=True, hide_index=True)
   else:
-    st.info(
-        "Nenhuma aplicação registrada para calcular a distribuição por banco"
-        " ainda."
-    )
+    st.info("Nenhuma aplicação registrada para calcular a distribuição ainda.")
 
   st.divider()
 
@@ -245,22 +354,6 @@ with aba_desafio:
     st.dataframe(
         df_tabela_final.set_index("id"), use_container_width=True, height=180
     )
-
-    if st.button("🗑️ Excluir Último Aporte Registrado"):
-      try:
-        ultimo_id = df_aportes["id"].max()
-        conexao = obter_conexao()
-        cursor = conexao.cursor()
-        cursor.execute(
-            "DELETE FROM desafio_aportes WHERE id = %s", (int(ultimo_id),)
-        )
-        conexao.commit()
-        cursor.close()
-        conexao.close()
-        st.warning("Último aporte removido com sucesso!")
-        st.rerun()
-      except Exception as e:
-        st.error(f"Erro ao excluir: {e}")
   else:
     st.info("Nenhum aporte registrado ainda.")
 
