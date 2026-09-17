@@ -185,6 +185,16 @@ if not df.empty:
 
   with col_edit1:
     st.markdown("### 🔄 Atualizar Lançamento")
+    
+    # Alerta contábil preventivo
+    st.info(
+        "💡 **Aviso Contábil:** Alterar a natureza de um lançamento de 'Despesa'"
+        " para 'Receita' (ou vice-versa) inverterá o sinal matemático no"
+        " saldo. Para estornos de Pix ou reembolsos, o procedimento correto é"
+        " manter a despesa original e cadastrar uma **Nova Receita** dedicada"
+        " ao reembolso."
+    )
+
     with st.form("form_edicao"):
       novo_tipo = st.selectbox(
           "Tipo",
@@ -209,8 +219,6 @@ if not df.empty:
 
           conexao = obter_conexao()
           cursor = conexao.cursor()
-          # Assegura que o valor gravado seja sempre absoluto e positivo,
-          # deixando a natureza do impacto definida estritamente pela coluna 'tipo'
           valor_limpo = abs(float(novo_valor))
 
           cursor.execute(
@@ -220,7 +228,7 @@ if not df.empty:
               WHERE id = %s
               """,
               (
-                  nova_data.strip(),
+                  nova_data.string if hasattr(nova_data, "string") else nova_data.strip(),
                   novo_tipo,
                   nova_categoria.strip(),
                   nova_descricao.strip(),
