@@ -136,7 +136,10 @@ if not df.empty:
   st.divider()
 
   st.write("### 🔄 Editar ou Excluir Registros Manuais")
-  st.write("Selecione um lançamento abaixo para alterar os dados ou excluí-lo.")
+  st.write(
+      "Selecione um lançamento abaixo para alterar os dados (exceto o tipo)"
+      " ou excluí-lo."
+  )
 
 
   def fmt_moeda(v):
@@ -186,21 +189,13 @@ if not df.empty:
   with col_edit1:
     st.markdown("### 🔄 Atualizar Lançamento")
     
-    # Alerta contábil preventivo
     st.info(
-        "💡 **Aviso Contábil:** Alterar a natureza de um lançamento de 'Despesa'"
-        " para 'Receita' (ou vice-versa) inverterá o sinal matemático no"
-        " saldo. Para estornos de Pix ou reembolsos, o procedimento correto é"
-        " manter a despesa original e cadastrar uma **Nova Receita** dedicada"
-        " ao reembolso."
+        f"💡 **Tipo Fixo:** Este registro é uma **{dados_atuais['tipo']}**. "
+        "Para alterar entre Receita e Despesa, exclua o registro e crie um novo."
     )
 
     with st.form("form_edicao"):
-      novo_tipo = st.selectbox(
-          "Tipo",
-          ["Despesa", "Receita"],
-          index=0 if dados_atuais["tipo"] == "Despesa" else 1,
-      )
+      # O tipo agora é mantido estritamente igual ao original (não editável)
       nova_categoria = st.text_input("Categoria", value=dados_atuais["categoria"])
       nova_descricao = st.text_input("Descrição", value=dados_atuais["descricao"])
       novo_valor = st.number_input(
@@ -221,15 +216,15 @@ if not df.empty:
           cursor = conexao.cursor()
           valor_limpo = abs(float(novo_valor))
 
+          # O comando SQL atualiza apenas os campos permitidos, preservando o tipo original
           cursor.execute(
               """
               UPDATE lancamentos 
-              SET data = %s, tipo = %s, categoria = %s, descricao = %s, valor = %s
+              SET data = %s, categoria = %s, descricao = %s, valor = %s
               WHERE id = %s
               """,
               (
-                  nova_data.string if hasattr(nova_data, "string") else nova_data.strip(),
-                  novo_tipo,
+                  nova_data.strip(),
                   nova_categoria.strip(),
                   nova_descricao.strip(),
                   valor_limpo,
@@ -248,7 +243,10 @@ if not df.empty:
 
   with col_edit2:
     st.markdown("### 🗑️ Excluir Lançamento")
-    st.warning("Atenção: Essa operação apagará permanentemente este registro.")
+    st.warning(
+        "Atenção: Essa operação apagará permanentemente este registro e o saldo"
+        " retornará imediatamente ao valor real."
+    )
 
     if st.button("Excluir este Lançamento", type="primary"):
       try:
