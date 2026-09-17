@@ -5,8 +5,10 @@ import streamlit as st
 
 st.set_page_config(page_title="Gerenciar Lançamentos", page_icon="✏️")
 
+
 def obter_conexao():
   return psycopg2.connect(st.secrets["DATABASE_URL"])
+
 
 st.subheader("✏️ Gerenciar, Editar ou Excluir Lançamentos")
 
@@ -14,12 +16,14 @@ try:
   conexao = obter_conexao()
   # Busca lançamentos manuais
   df = pd.read_sql_query(
-      "SELECT id, data, tipo, categoria, descricao, valor FROM lancamentos ORDER BY id DESC",
+      "SELECT id, data, tipo, categoria, descricao, valor FROM lancamentos"
+      " ORDER BY id DESC",
       conexao,
   )
   # Busca dívidas cadastradas para cruzar os parcelamentos ativos
   df_div = pd.read_sql_query(
-      "SELECT id, credor, valor_parcela, dia_vencimento, status FROM dividas WHERE status = 'Pendente'",
+      "SELECT id, credor, valor_parcela, dia_vencimento, status FROM dividas"
+      " WHERE status = 'Pendente'",
       conexao,
   )
   conexao.close()
@@ -34,78 +38,121 @@ if not df.empty:
   hoje = pd.Timestamp(datetime.now().date())
 
   # Separa os lançamentos futuros manuais
-  df_futuros = df[df["data_dt"] > hoje].sort_values(by="data_dt", ascending=True).copy()
+  df_futuros = (
+      df[df["data_dt"] > hoje]
+      .sort_values(by="data_dt", ascending=True)
+      .copy()
+  )
 
   # SEÇÃO INTELIGENTE: Puxa as parcelas ativas das dívidas para o mês atual/futuro
   if not df_div.empty:
-      # Filtra apenas dívidas que possuem parcelas ativas (valor da parcela > 0)
-      df_div_ativas = df_div[df_div["valor_parcela"] > 0].copy()
-      
-      if not df_div_ativas.empty:
-          mes_atual = hoje.month
-          ano_atual = hoje.year
-          
-          # Cria linhas virtuais de lançamentos futuros baseadas no dia de vencimento da dívida
-          lista_parcelas_mes = []
-          for _, row in df_div_ativas.iterrows():
-              dia_v = int(row["dia_vencimento"]) if pd.notna(row["dia_vencimento"]) and row["dia_vencimento"] > 0 else 10
-              # Ajusta caso o dia ultrapasse os dias do mês atual, ou monta a data do mês corrente/seguinte
-              try:
-                  data_venc_obj = datetime(ano_atual, mes_atual, dia_v)
-              except ValueError:
-                  data_venc_obj = datetime(ano_atual, mes_atual, 28) # Segurança para fevereiro/meses curtos
-              
-              # Se a data de vencimento já passou neste mês, joga para o próximo mês
-              if data_venc_obj < datetime.now():
-                  if mes_atual == 12:
-                      data_venc_obj = datetime(ano_atual + 1, 1, dia_v)
-                  else:
-                      data_venc_obj = datetime(ano_atual, mes_atual + 1, dia_v)
+    df_div_ativas = df_div[df_div["valor_parcela"] > 0].copy()
 
-              lista_parcelas_mes.append({
-                  "id": f"DIV-{row['id']}",
-                  "data": data_venc_obj.strftime("%d/%m/%Y"),
-                  "tipo": "Despesa",
-                  "categoria": "Dívida / Parcelamento",
-                  "descricao": f"Parcela Acordo: {row['credor']}",
-                  "valor": float(row["valor_parcela"]),
-                  "data_dt": pd.Timestamp(data_venc_obj.date())
-              })
-          
-          if lista_parcelas_mes:
-              df_parcelas_futuras = pd.DataFrame(lista_parcelas_mes)
-              # Junta os lançamentos manuais futuros com as parcelas automáticas das dívidas
-              df_futuros = pd.concat([df_futuros, df_parcelas_futuras], ignore_index=True)
-              df_futuros = df_futuros.sort_values(by="data_dt", ascending=True)
+    if not df_div_ativas.empty:
+      mes_atual = hoje.month
+      ano_atual = hoje.year
+
+      lista_parcelas_mes = []
+      for _, row in df_div_ativas.iterrows():
+        dia_v = (
+            int(row["dia_vencimento"])
+            if pd.notna(row["dia_vencimento"]) and row["dia_vencimento"] > 0
+            else 10
+        )
+        try:
+          data_venc_obj = datetime(ano_atual, mes_atual, dia_v)
+        except ValueError:
+          data_venc_obj = datetime(ano_atual, mes_atual, 28)
+
+        if data_venc_obj < datetime.now():
+          if mes_atual == 12:
+            data_venc_obj = datetime(ano_atual + 1, 1, dia_v)
+          else:
+            data_venc_obj = datetime(ano_atual, mes_atual + 1, dia_v)
+
+        lista_parcelas_mes.append({
+            "id": f"DIV-{row['id']}",
+            "data": data_venc_obj.strftime("%d/%m/%Y"),
+            "tipo": "Despesa",
+            "categoria": "Dívida / Parcelamento",
+            "descricao": f"Parcela Acordo: {row['credor']}",
+            "valor": float(row["valor_parcela"]),
+            "data_dt": pd.Timestamp(data_venc_obj.date()),
+        })
+
+      if lista_parcelas_mes:
+        df_parcelas_futuras = pd.DataFrame(lista_parcelas_mes)
+        df_futuros = pd.concat(
+            [df_futuros, df_parcelas_futuras], ignore_index=True
+        )
+        df_futuros = df_futuros.sort_values(by="data_dt", ascending=True)
 
   # Seção Visual Fixa para Lançamentos Futuros
   st.markdown("### ⏳ Lançamentos Futuros e Parcelamentos a Pagar")
-  
+
   if not df_futuros.empty:
-      st.info("Aqui estão reunidos seus compromissos manuais futuros e as parcelas ativas das suas dívidas com base nos dias de vencimento.")
-      
-      tabela_futuros = df_futuros[["id", "data", "tipo", "categoria", "descricao", "valor"]].copy()
-      tabela_futuros["valor"] = tabela_futuros["valor"].apply(lambda v: f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
-      tabela_futuros.columns = ["ID", "Data", "Tipo", "Categoria", "Descrição", "Valor"]
-      
-      st.dataframe(tabela_futuros.reset_index(drop=True), use_container_width=True)
-      
-      # Exibe o somatório de quanto tem para pagar/receber nos compromissos futuros listados
-      total_futuro_valor = df_futuros[df_futuros["tipo"] == "Despesa"]["valor"].sum() - df_futuros[df_futuros["tipo"] == "Receita"]["valor"].sum()
-      total_fut_fmt = f"R$ {abs(total_futuro_valor):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-      st.metric(label="📉 Impacto Líquido dos Próximos Vencimentos Listados", value=total_fut_fmt)
+    st.info(
+        "Aqui estão reunidos seus compromissos manuais futuros e as parcelas"
+        " ativas das suas dívidas com base nos dias de vencimento."
+    )
+
+    tabela_futuros = df_futuros[
+        ["id", "data", "tipo", "categoria", "descricao", "valor"]
+    ].copy()
+    tabela_futuros["valor"] = tabela_futuros["valor"].apply(
+        lambda v: f"R$ {v:,.2f}"
+        .replace(",", "X")
+        .replace(".", ",")
+        .replace("X", ".")
+    )
+    tabela_futuros.columns = [
+        "ID",
+        "Data",
+        "Tipo",
+        "Categoria",
+        "Descrição",
+        "Valor",
+    ]
+
+    st.dataframe(tabela_futuros.reset_index(drop=True), use_container_width=True)
+
+    total_futuro_valor = (
+        df_futuros[df_futuros["tipo"] == "Despesa"]["valor"].sum()
+        - df_futuros[df_futuros["tipo"] == "Receita"]["valor"].sum()
+    )
+    total_fut_fmt = (
+        f"R$ {abs(total_futuro_valor):,.2f}"
+        .replace(",", "X")
+        .replace(".", ",")
+        .replace("X", ".")
+    )
+    st.metric(
+        label="📉 Impacto Líquido dos Próximos Vencimentos Listados",
+        value=total_fut_fmt,
+    )
   else:
-      st.info("Não há lançamentos futuros ou parcelamentos ativos cadastrados no momento.")
+    st.info("Não há lançamentos futuros ou parcelamentos ativos cadastrados.")
 
   st.divider()
 
   st.write("### 🔄 Editar ou Excluir Registros Manuais")
   st.write("Selecione um lançamento abaixo para alterar os dados ou excluí-lo.")
 
-  def fmt_moeda(v):
-      return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
-  df["valor_fmt"] = pd.to_numeric(df["valor"], errors="coerce").fillna(0.0).apply(fmt_moeda)
+  def fmt_moeda(v):
+    return (
+        f"R$ {v:,.2f}"
+        .replace(",", "X")
+        .replace(".", ",")
+        .replace("X", ".")
+    )
+
+
+  df["valor_fmt"] = (
+      pd.to_numeric(df["valor"], errors="coerce")
+      .fillna(0.0)
+      .apply(fmt_moeda)
+  )
 
   df["resumo_label"] = (
       "ID: "
@@ -127,7 +174,9 @@ if not df.empty:
       "Escolha o lançamento para gerenciar:", df["resumo_label"].tolist()
   )
 
-  id_selecionado = int(lancamento_selecionado.split(" | ")[0].replace("ID: ", ""))
+  id_selecionado = int(
+      lancamento_selecionado.split(" | ")[0].replace("ID: ", "")
+  )
   dados_atuais = df[df["id"] == id_selecionado].iloc[0]
 
   st.divider()
@@ -160,6 +209,10 @@ if not df.empty:
 
           conexao = obter_conexao()
           cursor = conexao.cursor()
+          # Assegura que o valor gravado seja sempre absoluto e positivo,
+          # deixando a natureza do impacto definida estritamente pela coluna 'tipo'
+          valor_limpo = abs(float(novo_valor))
+
           cursor.execute(
               """
               UPDATE lancamentos 
@@ -169,9 +222,9 @@ if not df.empty:
               (
                   nova_data.strip(),
                   novo_tipo,
-                  nova_categoria,
-                  nova_descricao,
-                  novo_valor,
+                  nova_categoria.strip(),
+                  nova_descricao.strip(),
+                  valor_limpo,
                   id_selecionado,
               ),
           )
