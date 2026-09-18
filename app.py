@@ -6,7 +6,7 @@ import streamlit as st
 
 # Configuração da Página
 st.set_page_config(
-    page_title="Controle Financeiro Pro", page_icon="💰", layout="centered"
+    page_title="Controle Financeiro Pro", page_icon="💰", layout="wide"
 )
 
 
@@ -111,6 +111,7 @@ if menu == "📊 Painel & Gráficos":
     ].sum()
     saldo = total_receitas - total_despesas
 
+    st.subheader("Resumo do Mês e Visualização Gráfica")
     col1, col2, col3 = st.columns(3)
     col1.metric("Entradas", fmt_moeda(total_receitas))
     col2.metric("Saídas", fmt_moeda(total_despesas))
@@ -127,24 +128,45 @@ if menu == "📊 Painel & Gráficos":
 
     st.divider()
 
-    # Gráfico Interativo com Plotly
-    st.subheader("📊 Distribuição de Despesas por Categoria")
+    st.subheader("Distribuição dos Gastos por Categoria")
     df_despesas = df_lancamentos[df_lancamentos["tipo"] == "Despesa"]
+
     if not df_despesas.empty:
       df_cat = (
           df_despesas.groupby("categoria")["valor"].sum().reset_index()
       )
-      fig = px.bar(
-          df_cat,
-          x="categoria",
-          y="valor",
-          text="valor",
-          color="categoria",
-          labels={"categoria": "Categoria", "valor": "Valor (R$)"},
-      )
-      fig.update_traces(texttemplate="R$ %{text:.2f}", textposition="outside")
-      fig.update_layout(showlegend=False, xaxis_tickangle=-45)
-      st.plotly_chart(fig, use_container_width=True)
+
+      col_g1, col_g2 = st.columns(2)
+
+      with col_g1:
+        st.markdown("**Gráfico de Pizza**")
+        fig_pizza = px.pie(
+            df_cat,
+            names="categoria",
+            values="valor",
+            hole=0.4,
+            color_discrete_sequence=px.colors.qualitative.Set3,
+        )
+        fig_pizza.update_traces(
+            textposition="inside", textinfo="percent+label"
+        )
+        st.plotly_chart(fig_pizza, use_container_width=True)
+
+      with col_g2:
+        st.markdown("**Gráfico de Barras**")
+        fig_barras = px.bar(
+            df_cat,
+            x="categoria",
+            y="valor",
+            text="valor",
+            color="categoria",
+            labels={"categoria": "Categoria", "valor": "Valor (R$)"},
+        )
+        fig_barras.update_traces(
+            texttemplate="R$ %{text:.2f}", textposition="outside"
+        )
+        fig_barras.update_layout(showlegend=False, xaxis_tickangle=-45)
+        st.plotly_chart(fig_barras, use_container_width=True)
     else:
       st.info("Nenhuma despesa registrada para gerar gráficos.")
 
