@@ -36,6 +36,9 @@ def inicializar_banco():
             ALTER TABLE lancamentos ADD COLUMN IF NOT EXISTS local_aplicacao TEXT;
         """)
     cursor.execute("""
+            ALTER TABLE lancamentos ADD COLUMN IF NOT EXISTS is_aporte BOOLEAN DEFAULT FALSE;
+        """)
+    cursor.execute("""
             CREATE TABLE IF NOT EXISTS dividas (
                 id SERIAL PRIMARY KEY,
                 credor TEXT,
@@ -141,7 +144,7 @@ if menu == "📊 Painel & Gráficos":
         df_aportes_total["valor"].sum() if not df_aportes_total.empty else 0.0
     )
 
-    # Gastos reais excluem os investimentos da categoria de despesas comuns para o gráfico de pizza/barras
+    # Gastos reais comuns (excluindo os investimentos das despesas comuns do dia a dia)
     if "local_aplicacao" in df_lancamentos.columns:
       df_gastos_reais = df_lancamentos[
           (df_lancamentos["tipo"] == "Despesa")
@@ -157,26 +160,26 @@ if menu == "📊 Painel & Gráficos":
           & (~df_lancamentos["categoria"].str.contains("Investimento", na=False))
       ].copy()
 
+    total_gastos_comuns = df_gastos_reais["valor"].sum()
+
     # Adicionar os aportes no DataFrame de exibição dos gráficos com a categoria "Investimentos"
+    df_gastos_grafico = df_gastos_reais.copy()
     if not df_aportes_total.empty:
-      df_aportes_grafico = df_aportes_total.copy()
-      df_aportes_grafico["categoria"] = "Investimentos"
-      df_gastos_reais = pd.concat(
-          [df_gastos_reais, df_aportes_grafico], ignore_index=True
+      df_ap_graf = df_aportes_total.copy()
+      df_ap_graf["categoria"] = "Investimentos"
+      df_gastos_grafico = pd.concat(
+          [df_gastos_grafico, df_ap_graf], ignore_index=True
       )
 
-    total_saidas_reais = df_gastos_reais["valor"].sum()
+    total_saidas_exibicao = df_gastos_grafico["valor"].sum()
 
-    # Saldo Atual desconta todas as saídas (despesas + investimentos)
-    total_despesas_geral = df_lancamentos[df_lancamentos["tipo"] == "Despesa"][
-        "valor"
-    ].sum()
-    saldo = total_receitas - total_despesas_geral
+    # Saldo Atual real desconta tanto as despesas comuns quanto os aportes enviados para aplicações
+    saldo = total_receitas - total_gastos_comuns - total_aportes
 
     st.subheader("Resumo do Mês e Visualização Gráfica")
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("Entradas", fmt_moeda(total_receitas))
-    col2.metric("Saídas Totais", fmt_moeda(total_saidas_reais))
+    col2.metric("Gastos Comuns", fmt_moeda(total_gastos_comuns))
     col3.metric("Total em Aportes", fmt_moeda(total_aportes))
 
     if saldo >= 0:
@@ -195,8 +198,10 @@ if menu == "📊 Painel & Gráficos":
         "Distribuição de Gastos e Investimentos (Visão Consolidada)"
     )
 
-    if not df_gastos_reais.empty:
-      df_cat = df_gastos_reais.groupby("categoria")["valor"].sum().reset_index()
+    if not df_gastos_grafico.empty:
+      df_cat = (
+          df_gastos_grafico.groupby("categoria")["valor"].sum().reset_index()
+      )
 
       col_g1, col_g2 = st.columns(2)
 
@@ -306,8 +311,8 @@ elif menu == "➕ Novo Lançamento":
   else:
     st.subheader("📥 Registrar Novo Depósito / Aporte na Reserva")
     st.write(
-        "Este aporte será contabilizado como despesa/saída, abatido do saldo e"
-        " exibido como 'Investimentos' no painel."
+        "Este aporte será abatido do saldo da conta, guardado na instituição"
+        " selecionada e exibido como 'Investimentos' nos gráficos."
     )
 
     locais_geral = [
