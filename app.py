@@ -16,7 +16,7 @@ def obter_conexao():
   return psycopg2.connect(url_conexao)
 
 
-# Inicializar as tabelas no Supabase caso não existam e Sincronizar Aportes Antigos
+# Inicializar as tabelas e Sincronizar Inconsistências (Aportes vs Lançamentos)
 def inicializar_banco():
   try:
     conexao = obter_conexao()
@@ -50,7 +50,7 @@ def inicializar_banco():
         """)
     conexao.commit()
 
-    # Sincronização Automática: Garante que todo aporte antigo vire despesa no fluxo de caixa
+    # 1. Adicionar aportes que faltam nos lançamentos
     cursor.execute("SELECT data, valor, local_aplicacao FROM desafio_aportes")
     aportes_cadastrados = cursor.fetchall()
 
@@ -69,6 +69,27 @@ def inicializar_banco():
             " VALUES (%s, %s, %s, %s, %s)",
             (data_ap, "Despesa", "Investimento / Reserva", desc_procura, valor_ap),
         )
+        conexao.commit()
+
+    # 2. Remover despesas órfãs (cujo aporte foi excluído do desafio)
+    cursor.execute(
+        "SELECT id, data, valor, descricao FROM lancamentos WHERE tipo ="
+        " 'Despesa' AND categoria = 'Investimento / Reserva'"
+    )
+    despesas_aportes = cursor.fetchall()
+
+    for id_desp, data_d, valor_d, desc_d in despesas_aportes:
+      # Extrai o nome do local da descrição "Aporte: Nome"
+      local_extraido = desc_d.replace("Aporte: ", "").strip()
+      cursor.execute(
+          "SELECT id FROM desafio_aportes WHERE data = %s AND valor = %s AND ("
+          "local_aplicacao = %s OR local_aplicacao = 'Outro')",
+          (data_d, valor_d, local_extraido),
+      )
+      achou_aporte = cursor.fetchone()
+      if not achou_aporte:
+        # Se o aporte não existe mais no desafio, apaga a despesa órfã para restaurar o saldo
+        cursor.execute("DELETE FROM lancamentos WHERE id = %s", (id_desp,))
         conexao.commit()
 
     cursor.close()
@@ -362,6 +383,65 @@ elif menu == "🎯 Desafio Reserva / Aportes":
     )
     df_extrato["Valor"] = df_extrato["Valor"].apply(fmt_moeda)
     st.dataframe(df_extrato.set_index("id"), use_container_width=True)
+
+    st.divider()
+    st.subheader("⚙️ Gerenciar / Excluir Aporte")
+    ids_aportes = df_aportes["id"].tolist()
+    id_para_gerenciar = st.selectbox(
+        "Selecione o ID do Aporte para Editar ou Excluir", ids_aportes
+    )
+
+    if id_para_gerenciar:
+      aporte_selecionado = df_aportes[
+          df_aportes["id"] == id_para_gerenciar
+      ].iloc[0]
+
+      with st.form("form_excluir_aporte"):
+        st.write(f"Editando o Aporte ID: {id_para_gerenciar}")
+        d_val = st.text_input("Data", value=str(aporte_selecionado["data"]))
+        v_val = st.number_input(
+            "Valor", value=float(aporte_selecionado["valor"])
+        )
+        l_val = st.text_input(
+            "Local", value=str(aporte_selecionado["local_aplicacao"])
+        )
+
+        col_b1, col_b2 = st.columns(2)
+        with col_b1:
+          btn_atualizar = st.form_submit_button("Salvar Alterações")
+        with col_b2:
+          btn_excluir = st.form_submit_button("🗑️ Excluir Este Aporte")
+
+        if btn_excluir:
+          try:
+            conexao = obter_conexao()
+            cursor = conexao.cursor()
+
+            # Remove da tabela de desafio
+            cursor.execute(
+                "DELETE FROM desafio_aportes WHERE id = %s",
+                (int(id_para_gerenciar),),
+            )
+
+            # Remove a despesa vinculada para restaurar o saldo corretamente
+            desc_alvo = f"Aporte: {l_val}"
+            cursor.execute(
+                "DELETE FROM lancamentos WHERE tipo = 'Despesa' AND categoria ="
+                " 'Investimento / Reserva' AND descricao = %s AND valor = %s AND"
+                " data = %s",
+                (desc_alvo, float(v_val), d_val),
+            )
+
+            conexao.commit()
+            cursor.close()
+            conexao.close()
+            st.success(
+                "Aporte excluído com sucesso e saldo restabelecido no fluxo de"
+                " caixa!"
+            )
+            st.rerun()
+          except Exception as e:
+            st.error(f"Erro ao excluir: {e}")
   else:
     st.info(
         "Nenhum aporte registrado ainda. Utilize a aba '➕ Novo Lançamento'"
