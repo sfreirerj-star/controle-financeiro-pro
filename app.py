@@ -16,7 +16,7 @@ def obter_conexao():
   return psycopg2.connect(url_conexao)
 
 
-# Inicializar as tabelas no Supabase caso não existam
+# Inicializar as tabelas no Supabase caso não existam e Sincronizar Aportes Antigos
 def inicializar_banco():
   try:
     conexao = obter_conexao()
@@ -49,6 +49,28 @@ def inicializar_banco():
             )
         """)
     conexao.commit()
+
+    # Sincronização Automática: Garante que todo aporte antigo vire despesa no fluxo de caixa
+    cursor.execute("SELECT data, valor, local_aplicacao FROM desafio_aportes")
+    aportes_cadastrados = cursor.fetchall()
+
+    for data_ap, valor_ap, local_ap in aportes_cadastrados:
+      desc_procura = f"Aporte: {local_ap if local_ap else 'Outro'}"
+      cursor.execute(
+          "SELECT id FROM lancamentos WHERE tipo = 'Despesa' AND categoria ="
+          " 'Investimento / Reserva' AND descricao = %s AND valor = %s AND data"
+          " = %s",
+          (desc_procura, valor_ap, data_ap),
+      )
+      existe = cursor.fetchone()
+      if not existe:
+        cursor.execute(
+            "INSERT INTO lancamentos (data, tipo, categoria, descricao, valor)"
+            " VALUES (%s, %s, %s, %s, %s)",
+            (data_ap, "Despesa", "Investimento / Reserva", desc_procura, valor_ap),
+        )
+        conexao.commit()
+
     cursor.close()
     conexao.close()
   except Exception as e:
