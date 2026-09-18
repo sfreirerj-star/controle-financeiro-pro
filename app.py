@@ -16,11 +16,12 @@ def obter_conexao():
   return psycopg2.connect(url_conexao)
 
 
-# Inicializar as tabelas do banco de dados (Tabela unificada)
+# Inicializar as tabelas do banco de dados (Tabelas separadas: lancamentos e aportes)
 def inicializar_banco():
   try:
     conexao = obter_conexao()
     cursor = conexao.cursor()
+    # Tabela de créditos e débitos operacionais
     cursor.execute("""
             CREATE TABLE IF NOT EXISTS lancamentos (
                 id SERIAL PRIMARY KEY,
@@ -28,12 +29,18 @@ def inicializar_banco():
                 tipo TEXT,
                 categoria TEXT,
                 descricao TEXT,
-                valor REAL,
-                local_aplicacao TEXT
+                valor REAL
             )
         """)
+    # Tabela dedicada aos valores investidos/aportes
     cursor.execute("""
-            ALTER TABLE lancamentos ADD COLUMN IF NOT EXISTS local_aplicacao TEXT;
+            CREATE TABLE IF NOT EXISTS aportes (
+                id SERIAL PRIMARY KEY,
+                data TEXT,
+                local_aplicacao TEXT,
+                descricao TEXT,
+                valor REAL
+            )
         """)
     cursor.execute("""
             CREATE TABLE IF NOT EXISTS dividas (
@@ -70,19 +77,15 @@ menu = st.sidebar.selectbox(
 try:
   conexao = obter_conexao()
   df_lancamentos = pd.read_sql_query("SELECT * FROM lancamentos", conexao)
+  df_aportes = pd.read_sql_query("SELECT * FROM aportes", conexao)
   df_dividas = pd.read_sql_query("SELECT * FROM dividas", conexao)
   conexao.close()
 except Exception:
   df_lancamentos = pd.DataFrame(
-      columns=[
-          "id",
-          "data",
-          "tipo",
-          "categoria",
-          "descricao",
-          "valor",
-          "local_aplicacao",
-      ]
+      columns=["id", "data", "tipo", "categoria", "descricao", "valor"]
+  )
+  df_aportes = pd.DataFrame(
+      columns=["id", "data", "local_aplicacao", "descricao", "valor"]
   )
   df_dividas = pd.DataFrame(
       columns=["id", "credor", "valor_total", "juros_mensal", "status"]
@@ -95,177 +98,126 @@ def fmt_moeda(valor):
   )
 
 
-# Função auxiliar robusta para identificar aportes em todo o sistema
-def obter_df_aportes(df):
-  if df.empty:
-    return pd.DataFrame(columns=df.columns)
-  cond_cat = df["categoria"].str.contains("Investimento", case=False, na=False)
-  cond_loc = (
-      df["local_aplicacao"].notna()
-      & (df["local_aplicacao"] != "")
-      & (df["local_aplicacao"].astype(str).str.lower() != "none")
-  )
-  return df[cond_cat | cond_loc]
-
-
 if menu == "📊 Painel & Gráficos":
   st.title("💰 Controle Financeiro - Sair do Vermelho")
   st.write(
       "Aplicativo unificado de controle de créditos, débitos e investimentos."
   )
 
-  if not df_lancamentos.empty:
-    if "valor" in df_lancamentos.columns:
-      df_lancamentos["valor"] = pd.to_numeric(
-          df_lancamentos["valor"], errors="coerce"
-      ).fillna(0.0)
-    else:
-      df_lancamentos = pd.DataFrame(
-          columns=[
-              "id",
-              "data",
-              "tipo",
-              "categoria",
-              "descricao",
-              "valor",
-              "local_aplicacao",
-          ]
-      )
-
-    total_receitas = df_lancamentos[df_lancamentos["tipo"] == "Receita"][
-        "valor"
-    ].sum()
-
-    # Obter todos os aportes de forma unificada
-    df_aportes_total = obter_df_aportes(df_lancamentos)
-    total_aportes = (
-        df_aportes_total["valor"].sum() if not df_aportes_total.empty else 0.0
-    )
-
-    # Gastos reais comuns (excluindo os aportes de investimento)
-    ids_aportes = (
-        df_aportes_total["id"].tolist() if "id" in df_aportes_total.columns else []
-    )
-    if ids_aportes and "id" in df_lancamentos.columns:
-      df_gastos_reais = df_lancamentos[
-          (df_lancamentos["tipo"] == "Despesa")
-          & (~df_lancamentos["id"].isin(ids_aportes))
-      ].copy()
-    else:
-      df_gastos_reais = df_lancamentos[
-          (df_lancamentos["tipo"] == "Despesa")
-          & (
-              ~df_lancamentos["categoria"].str.contains(
-                  "Investimento", case=False, na=False
-              )
-          )
-          & (
-              df_lancamentos["local_aplicacao"].isna()
-              | (df_lancamentos["local_aplicacao"] == "")
-          )
-      ].copy()
-
-    total_gastos_comuns = df_gastos_reais["valor"].sum()
-
-    # Saldo Atual real: Entradas menos Gastos Comuns menos Aportes/Investimentos
-    saldo = total_receitas - total_gastos_comuns - total_aportes
-
-    # Montar DataFrame para os gráficos (incluindo os investimentos com a categoria "Investimentos")
-    df_gastos_grafico = df_gastos_reais.copy()
-    if not df_aportes_total.empty:
-      df_ap_graf = df_aportes_total.copy()
-      df_ap_graf["categoria"] = "Investimentos"
-      df_gastos_grafico = pd.concat(
-          [df_gastos_grafico, df_ap_graf], ignore_index=True
-      )
-
-    st.subheader("Resumo do Mês e Visualização Gráfica")
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Entradas", fmt_moeda(total_receitas))
-    col2.metric("Gastos Comuns", fmt_moeda(total_gastos_comuns))
-    col3.metric("Total em Aportes", fmt_moeda(total_aportes))
-
-    if saldo >= 0:
-      col4.metric("Saldo Atual", fmt_moeda(saldo), delta="No Azul 💙")
-    else:
-      col4.metric(
-          "Saldo Atual",
-          fmt_moeda(saldo),
-          delta="No Vermelho 🔴",
-          delta_color="inverse",
-      )
-
-    st.divider()
-
-    st.subheader(
-        "Distribuição de Gastos e Investimentos (Visão Consolidada)"
-    )
-
-    if not df_gastos_grafico.empty:
-      df_cat = (
-          df_gastos_grafico.groupby("categoria")["valor"].sum().reset_index()
-      )
-
-      col_g1, col_g2 = st.columns(2)
-
-      with col_g1:
-        st.markdown("**Gráfico de Pizza**")
-        fig_pizza = px.pie(
-            df_cat,
-            names="categoria",
-            values="valor",
-            hole=0.4,
-            color_discrete_sequence=px.colors.qualitative.Set3,
-        )
-        fig_pizza.update_traces(
-            textposition="inside", textinfo="percent+label"
-        )
-        st.plotly_chart(fig_pizza, use_container_width=True)
-
-      with col_g2:
-        st.markdown("**Gráfico de Barras**")
-        fig_barras = px.bar(
-            df_cat,
-            x="categoria",
-            y="valor",
-            text="valor",
-            color="categoria",
-            labels={"categoria": "Categoria", "valor": "Valor (R$)"},
-        )
-        fig_barras.update_traces(
-            texttemplate="R$ %{text:.2f}", textposition="outside"
-        )
-        fig_barras.update_layout(showlegend=False, xaxis_tickangle=-45)
-        st.plotly_chart(fig_barras, use_container_width=True)
-    else:
-      st.info("Nenhum registro encontrado para gerar gráficos.")
-
-    st.divider()
-    st.subheader("Histórico Geral de Lançamentos")
-    df_exibicao = df_lancamentos.tail(10).copy()
-    if "valor" in df_exibicao.columns:
-      df_exibicao["valor"] = df_exibicao["valor"].apply(fmt_moeda)
-
-    colunas_desejadas = [
-        "id",
-        "data",
-        "tipo",
-        "categoria",
-        "descricao",
-        "valor",
-        "local_aplicacao",
-    ]
-    colunas_existentes = [
-        c for c in colunas_desejadas if c in df_exibicao.columns
-    ]
-    df_final = df_exibicao[colunas_existentes]
-
-    if "id" in df_final.columns:
-      st.dataframe(df_final.set_index("id"), use_container_width=True)
-    else:
-      st.dataframe(df_final, use_container_width=True)
+  # Tratamento numérico seguro
+  if not df_lancamentos.empty and "valor" in df_lancamentos.columns:
+    df_lancamentos["valor"] = pd.to_numeric(
+        df_lancamentos["valor"], errors="coerce"
+    ).fillna(0.0)
   else:
-    st.info("Nenhum registro encontrado.")
+    df_lancamentos = pd.DataFrame(
+        columns=["id", "data", "tipo", "categoria", "descricao", "valor"]
+    )
+
+  if not df_aportes.empty and "valor" in df_aportes.columns:
+    df_aportes["valor"] = pd.to_numeric(
+        df_aportes["valor"], errors="coerce"
+    ).fillna(0.0)
+  else:
+    df_aportes = pd.DataFrame(
+        columns=["id", "data", "local_aplicacao", "descricao", "valor"]
+    )
+
+  total_receitas = (
+      df_lancamentos[df_lancamentos["tipo"] == "Receita"]["valor"].sum()
+      if not df_lancamentos.empty
+      else 0.0
+  )
+  total_gastos = (
+      df_lancamentos[df_lancamentos["tipo"] == "Despesa"]["valor"].sum()
+      if not df_lancamentos.empty
+      else 0.0
+  )
+  total_aportes = df_aportes["valor"].sum() if not df_aportes.empty else 0.0
+
+  # Saldo Atual: Receitas menos Despesas Correntes menos Aportes (dinheiro guardado sai da conta)
+  saldo = total_receitas - total_gastos - total_aportes
+
+  st.subheader("Resumo do Mês e Visualização Gráfica")
+  col1, col2, col3, col4 = st.columns(4)
+  col1.metric("Entradas", fmt_moeda(total_receitas))
+  col2.metric("Gastos Comuns", fmt_moeda(total_gastos))
+  col3.metric("Total em Aportes", fmt_moeda(total_aportes))
+
+  if saldo >= 0:
+    col4.metric("Saldo Atual", fmt_moeda(saldo), delta="No Azul 💙")
+  else:
+    col4.metric(
+        "Saldo Atual",
+        fmt_moeda(saldo),
+        delta="No Vermelho 🔴",
+        delta_color="inverse",
+    )
+
+  st.divider()
+
+  st.subheader("Distribuição de Gastos e Investimentos (Visão Consolidada)")
+
+  # Preparar dados para os gráficos unindo despesas e aportes como "Investimentos"
+  df_gastos_grafico = (
+      df_lancamentos[df_lancamentos["tipo"] == "Despesa"].copy()
+      if not df_lancamentos.empty
+      else pd.DataFrame()
+  )
+
+  if not df_aportes.empty:
+    df_ap_graf = pd.DataFrame()
+    df_ap_graf["categoria"] = ["Investimentos"] * len(df_aportes)
+    df_ap_graf["valor"] = df_aportes["valor"]
+    df_gastos_grafico = pd.concat(
+        [df_gastos_grafico, df_ap_graf], ignore_index=True
+    )
+
+  if not df_gastos_grafico.empty and "valor" in df_gastos_grafico.columns:
+    df_cat = (
+        df_gastos_grafico.groupby("categoria")["valor"].sum().reset_index()
+    )
+
+    col_g1, col_g2 = st.columns(2)
+
+    with col_g1:
+      st.markdown("**Gráfico de Pizza**")
+      fig_pizza = px.pie(
+          df_cat,
+          names="categoria",
+          values="valor",
+          hole=0.4,
+          color_discrete_sequence=px.colors.qualitative.Set3,
+      )
+      fig_pizza.update_traces(textposition="inside", textinfo="percent+label")
+      st.plotly_chart(fig_pizza, use_container_width=True)
+
+    with col_g2:
+      st.markdown("**Gráfico de Barras**")
+      fig_barras = px.bar(
+          df_cat,
+          x="categoria",
+          y="valor",
+          text="valor",
+          color="categoria",
+          labels={"categoria": "Categoria", "valor": "Valor (R$)"},
+      )
+      fig_barras.update_traces(
+          texttemplate="R$ %{text:.2f}", textposition="outside"
+      )
+      fig_barras.update_layout(showlegend=False, xaxis_tickangle=-45)
+      st.plotly_chart(fig_barras, use_container_width=True)
+  else:
+    st.info("Nenhum registro encontrado para gerar gráficos.")
+
+  st.divider()
+  st.subheader("Histórico Geral de Lançamentos")
+  if not df_lancamentos.empty:
+    df_exibicao = df_lancamentos.tail(10).copy()
+    df_exibicao["valor"] = df_exibicao["valor"].apply(fmt_moeda)
+    st.dataframe(df_exibicao.set_index("id"), use_container_width=True)
+  else:
+    st.info("Nenhum lançamento encontrado.")
 
 elif menu == "➕ Novo Lançamento":
   st.title("➕ Central de Lançamentos e Aportes")
@@ -294,15 +246,8 @@ elif menu == "➕ Novo Lançamento":
           cursor = conexao.cursor()
           cursor.execute(
               "INSERT INTO lancamentos (data, tipo, categoria, descricao,"
-              " valor, local_aplicacao) VALUES (%s, %s, %s, %s, %s, %s)",
-              (
-                  data_l,
-                  tipo_l,
-                  categoria_l,
-                  descricao_l,
-                  float(valor_l),
-                  None,
-              ),
+              " valor) VALUES (%s, %s, %s, %s, %s)",
+              (data_l, tipo_l, categoria_l, descricao_l, float(valor_l)),
           )
           conexao.commit()
           cursor.close()
@@ -314,8 +259,8 @@ elif menu == "➕ Novo Lançamento":
   else:
     st.subheader("📥 Registrar Novo Depósito / Aporte na Reserva")
     st.write(
-        "Este aporte será abatido do saldo da conta, guardado na instituição"
-        " selecionada e exibido como 'Investimentos' nos gráficos."
+        "Este aporte será guardado na tabela de investimentos e abatido do"
+        " saldo final da conta."
     )
 
     locais_geral = [
@@ -330,14 +275,13 @@ elif menu == "➕ Novo Lançamento":
     ]
 
     local_sel = st.selectbox("Local da Aplicação", locais_geral)
+    local_outro = (
+        st.text_input("Digite o nome do Banco ou Corretora personalizado:")
+        if local_sel == "Outro (Personalizado)"
+        else ""
+    )
 
-    local_outro = ""
-    if local_sel == "Outro (Personalizado)":
-      local_outro = st.text_input(
-          "Digite o nome do Banco ou Corretora personalizado:"
-      )
-
-    with st.form("form_aporte_integrado"):
+    with st.form("form_aporte_tabela"):
       col_i1, col_i2 = st.columns(2)
       with col_i1:
         data_aporte = st.text_input(
@@ -357,36 +301,31 @@ elif menu == "➕ Novo Lançamento":
           "Descrição Opcional", value="Aporte para Reserva de Emergência"
       )
 
-      if st.form_submit_button("💾 Salvar Aporte Integrado"):
-        if local_sel == "Outro (Personalizado)":
-          local_final = local_outro.strip() if local_outro.strip() else "Outro"
-        else:
-          local_final = local_sel
+      if st.form_submit_button("💾 Salvar Aporte"):
+        local_final = (
+            local_outro.strip()
+            if local_sel == "Outro (Personalizado)" and local_outro.strip()
+            else (local_sel if local_sel != "Outro (Personalizado)" else "Outro")
+        )
 
         try:
           datetime.strptime(data_aporte.strip(), "%d/%m/%Y")
           conexao = obter_conexao()
           cursor = conexao.cursor()
-
           cursor.execute(
-              "INSERT INTO lancamentos (data, tipo, categoria, descricao,"
-              " valor, local_aplicacao) VALUES (%s, %s, %s, %s, %s, %s)",
+              "INSERT INTO aportes (data, local_aplicacao, descricao, valor)"
+              " VALUES (%s, %s, %s, %s)",
               (
                   data_aporte.strip(),
-                  "Despesa",
-                  "Investimentos",
+                  local_final,
                   descricao_aporte,
                   float(valor_aporte),
-                  local_final,
               ),
           )
-
           conexao.commit()
           cursor.close()
           conexao.close()
-          st.success(
-              "Aporte registrado, abatido do saldo e integrado com sucesso!"
-          )
+          st.success("Aporte registado e abatido do saldo com sucesso!")
           st.rerun()
         except ValueError:
           st.error("Data inválida. Utilize o formato DD/MM/AAAA.")
@@ -394,69 +333,60 @@ elif menu == "➕ Novo Lançamento":
           st.error(f"Erro ao salvar: {e}")
 
 elif menu == "📋 Gerenciar Lançamentos":
-  st.title("📋 Gerenciamento Geral de Lançamentos")
-  if not df_lancamentos.empty and "id" in df_lancamentos.columns:
-    ids_lanc = df_lancamentos["id"].tolist()
-    id_sel = st.selectbox("Selecione o Lançamento para Editar ou Excluir", ids_lanc)
+  st.title("📋 Gerenciamento Geral de Lançamentos e Aportes")
 
-    if id_sel:
-      lan_sel = df_lancamentos[df_lancamentos["id"] == id_sel].iloc[0]
-      with st.form("form_gerenciar_lancamento"):
-        st.write(f"Editando Lançamento ID: {id_sel}")
-        tipo_g = st.selectbox(
-            "Tipo",
-            ["Despesa", "Receita"],
-            index=0 if lan_sel["tipo"] == "Despesa" else 1,
-        )
-        cat_g = st.text_input("Categoria", value=str(lan_sel["categoria"]))
-        desc_g = st.text_input("Descrição", value=str(lan_sel["descricao"]))
-        val_g = st.number_input("Valor (R$)", value=float(lan_sel["valor"]))
-        data_g = st.text_input("Data", value=str(lan_sel["data"]))
+  aba_ger = st.radio(
+      "O que deseja gerenciar?", ["Lançamentos (Comuns)", "Aportes / Investimentos"]
+  )
 
-        local_atual = (
-            str(lan_sel["local_aplicacao"])
-            if "local_aplicacao" in lan_sel
-            and pd.notna(lan_sel["local_aplicacao"])
-            else ""
-        )
-        local_g = st.text_input(
-            "Local da Aplicação (se houver)",
-            value=local_atual,
-        )
+  if aba_ger == "Lançamentos (Comuns)":
+    if not df_lancamentos.empty and "id" in df_lancamentos.columns:
+      ids_lanc = df_lancamentos["id"].tolist()
+      id_sel = st.selectbox(
+          "Selecione o Lançamento para Editar ou Excluir", ids_lanc
+      )
 
-        col_g1, col_g2 = st.columns(2)
-        with col_g1:
-          btn_salvar_g = st.form_submit_button("Salvar Alterações")
-        with col_g2:
-          btn_excluir_g = st.form_submit_button("🗑️ Excluir Lançamento")
+      if id_sel:
+        lan_sel = df_lancamentos[df_lancamentos["id"] == id_sel].iloc[0]
+        with st.form("form_ger_lanc"):
+          tipo_g = st.selectbox(
+              "Tipo",
+              ["Despesa", "Receita"],
+              index=0 if lan_sel["tipo"] == "Despesa" else 1,
+          )
+          cat_g = st.text_input("Categoria", value=str(lan_sel["categoria"]))
+          desc_g = st.text_input("Descrição", value=str(lan_sel["descricao"]))
+          val_g = st.number_input("Valor (R$)", value=float(lan_sel["valor"]))
+          data_g = st.text_input("Data", value=str(lan_sel["data"]))
 
-        if btn_salvar_g:
-          try:
+          col_g1, col_g2 = st.columns(2)
+          with col_g1:
+            btn_salvar = st.form_submit_button("Salvar Alterações")
+          with col_g2:
+            btn_excluir = st.form_submit_button("🗑️ Excluir Lançamento")
+
+          if btn_salvar:
             conexao = obter_conexao()
             cursor = conexao.cursor()
             cursor.execute(
                 "UPDATE lancamentos SET tipo = %s, categoria = %s, descricao ="
-                " %s, valor = %s, data = %s, local_aplicacao = %s WHERE id = %s",
+                " %s, valor = %s, data = %s WHERE id = %s",
                 (
                     tipo_g,
                     cat_g.strip(),
                     desc_g.strip(),
                     float(val_g),
                     data_g.strip(),
-                    local_g.strip() if local_g.strip() else None,
                     int(id_sel),
                 ),
             )
             conexao.commit()
             cursor.close()
             conexao.close()
-            st.success("Lançamento atualizado com sucesso!")
+            st.success("Atualizado com sucesso!")
             st.rerun()
-          except Exception as e:
-            st.error(f"Erro ao atualizar: {e}")
 
-        if btn_excluir_g:
-          try:
+          if btn_excluir:
             conexao = obter_conexao()
             cursor = conexao.cursor()
             cursor.execute(
@@ -465,17 +395,71 @@ elif menu == "📋 Gerenciar Lançamentos":
             conexao.commit()
             cursor.close()
             conexao.close()
-            st.success("Lançamento excluído com sucesso!")
+            st.success("Excluído com sucesso!")
             st.rerun()
-          except Exception as e:
-            st.error(f"Erro ao excluir: {e}")
+    else:
+      st.info("Nenhum lançamento comum registado.")
   else:
-    st.info("Nenhum lançamento para gerenciar ou coluna ID ausente.")
+    if not df_aportes.empty and "id" in df_aportes.columns:
+      ids_ap = df_aportes["id"].tolist()
+      id_ap_sel = st.selectbox(
+          "Selecione o Aporte para Editar ou Excluir", ids_ap
+      )
+
+      if id_ap_sel:
+        ap_sel = df_aportes[df_aportes["id"] == id_ap_sel].iloc[0]
+        with st.form("form_ger_ap"):
+          loc_g = st.text_input(
+              "Local da Aplicação", value=str(ap_sel["local_aplicacao"])
+          )
+          desc_ap_g = st.text_input(
+              "Descrição", value=str(ap_sel["descricao"])
+          )
+          val_ap_g = st.number_input(
+              "Valor (R$)", value=float(ap_sel["valor"])
+          )
+          data_ap_g = st.text_input("Data", value=str(ap_sel["data"]))
+
+          col_a1, col_a2 = st.columns(2)
+          with col_a1:
+            btn_salvar_ap = st.form_submit_button("Salvar Alterações")
+          with col_a2:
+            btn_excluir_ap = st.form_submit_button("🗑️ Excluir Aporte")
+
+          if btn_salvar_ap:
+            conexao = obter_conexao()
+            cursor = conexao.cursor()
+            cursor.execute(
+                "UPDATE aportes SET local_aplicacao = %s, descricao = %s,"
+                " valor = %s, data = %s WHERE id = %s",
+                (
+                    loc_g.strip(),
+                    desc_ap_g.strip(),
+                    float(val_ap_g),
+                    data_ap_g.strip(),
+                    int(id_ap_sel),
+                ),
+            )
+            conexao.commit()
+            cursor.close()
+            conexao.close()
+            st.success("Aporte atualizado com sucesso!")
+            st.rerun()
+
+          if btn_excluir_ap:
+            conexao = obter_conexao()
+            cursor = conexao.cursor()
+            cursor.execute("DELETE FROM aportes WHERE id = %s", (int(id_ap_sel),))
+            conexao.commit()
+            cursor.close()
+            conexao.close()
+            st.success("Aporte excluído com sucesso!")
+            st.rerun()
+    else:
+      st.info("Nenhum aporte registado.")
 
 elif menu == "🎯 Desafio Reserva / Aportes":
   st.title("🎯 Painel Consolidado de Reservas e Aportes")
-
-  df_aportes = obter_df_aportes(df_lancamentos)
 
   if not df_aportes.empty:
     total_guardado = df_aportes["valor"].sum()
@@ -501,21 +485,9 @@ elif menu == "🎯 Desafio Reserva / Aportes":
     if "valor" in df_exibe_ap.columns:
       df_exibe_ap["valor"] = df_exibe_ap["valor"].apply(fmt_moeda)
 
-    colunas_desejadas_ap = [
-        "id",
-        "data",
-        "local_aplicacao",
-        "descricao",
-        "valor",
-    ]
-    colunas_existentes_ap = [
-        c for c in colunas_desejadas_ap if c in df_exibe_ap.columns
-    ]
-    df_final_ap = df_exibe_ap[colunas_existentes_ap]
-
-    if "id" in df_final_ap.columns:
+    if "id" in df_exibe_ap.columns:
       st.dataframe(
-          df_final_ap.rename(
+          df_exibe_ap.rename(
               columns={
                   "data": "Data",
                   "local_aplicacao": "Local",
@@ -526,9 +498,11 @@ elif menu == "🎯 Desafio Reserva / Aportes":
           use_container_width=True,
       )
     else:
-      st.dataframe(df_final_ap, use_container_width=True)
+      st.dataframe(df_exibe_ap, use_container_width=True)
   else:
-    st.info("Nenhum aporte registrado na tabela unificada ainda.")
+    st.info(
+        "Nenhum aporte registado na tabela dedicada a investimentos ainda."
+    )
 
 elif menu == "⚠️ Raio-X de Dívidas":
   st.title("⚠️ Raio-X de Dívidas Ativas")
