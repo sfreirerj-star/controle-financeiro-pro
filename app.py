@@ -57,15 +57,17 @@ if menu == "📊 Painel & Gráficos":
         "Aplicativo unificado de controle de créditos, débitos e investimentos."
     )
 
-    # Tratamento numérico seguro
+    # Tratamento flexível para capturar receitas e despesas independentemente de maiúsculas/minúsculas
     if not df_lancamentos.empty and "valor" in df_lancamentos.columns:
         df_lancamentos["valor"] = pd.to_numeric(
             df_lancamentos["valor"], errors="coerce"
         ).fillna(0.0)
+        df_lancamentos["tipo_clean"] = df_lancamentos["tipo"].str.strip().str.lower()
     else:
         df_lancamentos = pd.DataFrame(
             columns=["id", "data", "tipo", "categoria", "descricao", "valor"]
         )
+        df_lancamentos["tipo_clean"] = ""
 
     if not df_aportes.empty and "valor" in df_aportes.columns:
         df_aportes["valor"] = pd.to_numeric(
@@ -77,12 +79,12 @@ if menu == "📊 Painel & Gráficos":
         )
 
     total_receitas = (
-        df_lancamentos[df_lancamentos["tipo"] == "Receita"]["valor"].sum()
+        df_lancamentos[df_lancamentos["tipo_clean"].isin(["receita", "crédito", "credito", "entrada"])]["valor"].sum()
         if not df_lancamentos.empty
         else 0.0
     )
     total_gastos = (
-        df_lancamentos[df_lancamentos["tipo"] == "Despesa"]["valor"].sum()
+        df_lancamentos[df_lancamentos["tipo_clean"].isin(["despesa", "débito", "debito", "saida"])]["valor"].sum()
         if not df_lancamentos.empty
         else 0.0
     )
@@ -113,7 +115,7 @@ if menu == "📊 Painel & Gráficos":
 
     # Preparar dados para os gráficos unindo despesas e aportes como "Investimentos"
     df_gastos_grafico = (
-        df_lancamentos[df_lancamentos["tipo"] == "Despesa"].copy()
+        df_lancamentos[df_lancamentos["tipo_clean"].isin(["despesa", "débito", "debito", "saida"])].copy()
         if not df_lancamentos.empty
         else pd.DataFrame()
     )
@@ -167,6 +169,8 @@ if menu == "📊 Painel & Gráficos":
     st.subheader("Histórico Geral de Lançamentos")
     if not df_lancamentos.empty:
         df_exibicao = df_lancamentos.tail(10).copy()
+        if "tipo_clean" in df_exibicao.columns:
+            df_exibicao = df_exibicao.drop(columns=["tipo_clean"])
         df_exibicao["valor"] = df_exibicao["valor"].apply(fmt_moeda)
         st.dataframe(df_exibicao.set_index("id"), use_container_width=True)
     else:
@@ -305,7 +309,7 @@ elif menu == "📋 Gerenciar Lançamentos":
                     tipo_g = st.selectbox(
                         "Tipo",
                         ["Despesa", "Receita"],
-                        index=0 if lan_sel["tipo"] == "Despesa" else 1,
+                        index=0 if str(lan_sel["tipo"]).strip().lower() == "despesa" else 1,
                     )
                     cat_g = st.text_input("Categoria", value=str(lan_sel["categoria"]))
                     desc_g = st.text_input("Descrição", value=str(lan_sel["descricao"]))
