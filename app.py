@@ -77,7 +77,7 @@ if menu == "📊 Painel & Gráficos":
             columns=["id", "data", "local_aplicacao", "descricao", "valor"]
         )
 
-    total_receitas = (
+   total_receitas = (
         df_lancamentos[df_lancamentos["tipo_clean"].isin(["receita", "crédito", "credito", "entrada"])]["valor"].sum()
         if not df_lancamentos.empty
         else 0.0
@@ -87,9 +87,9 @@ if menu == "📊 Painel & Gráficos":
         if not df_lancamentos.empty
         else 0.0
     )
-    total_aportes = df_aportes["valor"].sum() if not df_aportes.empty else 0.0
+    total_aportes = df_aportes["valor"].sum() if not df_aportes.empty and "valor" in df_aportes.columns else 0.0
 
-    # Saldo Atual: Receitas menos Despesas Correntes menos Aportes
+    # Saldo Atual: Entradas menos Gastos Comuns menos Aportes (o dinheiro investido/guardado sai da conta disponível)
     saldo = total_receitas - total_gastos - total_aportes
 
     st.subheader("Resumo do Mês e Visualização Gráfica")
