@@ -16,7 +16,7 @@ def obter_conexao():
   return psycopg2.connect(url_conexao)
 
 
-# Inicializar as tabelas do banco de dados (sem recriação forçada de lançamentos)
+# Inicializar as tabelas do banco de dados
 def inicializar_banco():
   try:
     conexao = obter_conexao()
@@ -226,8 +226,7 @@ elif menu == "➕ Novo Lançamento":
     st.subheader("📥 Registrar Novo Depósito / Aporte na Reserva")
     st.write(
         "Ao salvar por aqui, o valor será somado ao seu Desafio e lançado"
-        " automaticamente como uma **Despesa** no seu fluxo de caixa, abatendo"
-        " do seu saldo atual."
+        " automaticamente como uma **Despesa** no seu fluxo de caixa."
     )
 
     with st.form("form_aporte_integrado"):
@@ -241,7 +240,7 @@ elif menu == "➕ Novo Lançamento":
         valor_aporte = st.number_input(
             "Valor Depositado (R$)",
             min_value=1.0,
-            value=532.00,
+            value=100.00,
             step=10.0,
             format="%.2f",
         )
@@ -257,11 +256,11 @@ elif menu == "➕ Novo Lançamento":
       ]
       local_sel = st.selectbox("Local da Aplicação", locais_geral)
       local_outro = st.text_input(
-          "Se selecionou 'Outro (Personalizado)' acima, digite o nome do Banco"
-          " ou Corretora:"
+          "Especifique o Banco / Corretora (Preencha caso tenha selecionado"
+          " 'Outro' ou queira ajustar)"
       )
 
-      if st.form_submit_button("💾 Salvar Aporte"):
+      if st.form_submit_button("💾 Salvar Aporte no Desafio"):
         if local_sel == "Outro (Personalizado)":
           local_final = local_outro.strip() if local_outro.strip() else "Outro"
         else:
@@ -335,9 +334,7 @@ elif menu == "📋 Gerenciar Lançamentos":
             conexao.commit()
             cursor.close()
             conexao.close()
-            st.success(
-                "Lançamento excluído com sucesso e saldo atualizado na hora!"
-            )
+            st.success("Lançamento excluído com sucesso!")
             st.rerun()
           except Exception as e:
             st.error(f"Erro ao excluir: {e}")
@@ -368,12 +365,68 @@ elif menu == "🎯 Desafio Reserva / Aportes":
     ].rename(columns={"local_aplicacao": "Instituição / Local"})
     st.dataframe(df_tabela, use_container_width=True, hide_index=True)
 
-    st.subheader("📋 Extrato de Aportes")
-    df_extrato = df_aportes[["id", "data", "local_aplicacao", "valor_num"]].rename(
-        columns={"local_aplicacao": "Local da Aplicação", "valor_num": "Valor"}
+    st.divider()
+    st.subheader("🛠️ Editar ou Excluir Aportes Registrados")
+    ids_aportes = df_aportes["id"].tolist()
+    aporte_id_sel = st.selectbox(
+        "Selecione o ID do Aporte para Corrigir ou Excluir", ids_aportes
     )
-    df_extrato["Valor"] = df_extrato["Valor"].apply(fmt_moeda)
-    st.dataframe(df_extrato.set_index("id"), use_container_width=True)
+
+    if aporte_id_sel:
+      ap_sel = df_aportes[df_aportes["id"] == aporte_id_sel].iloc[0]
+      with st.form("form_editar_aporte"):
+        st.write(f"Editando Aporte ID: {aporte_id_sel}")
+        novo_local = st.text_input(
+            "Nome do Banco / Corretora", value=str(ap_sel["local_aplicacao"])
+        )
+        novo_valor = st.number_input(
+            "Valor (R$)", value=float(ap_sel["valor_num"])
+        )
+        nova_data = st.text_input("Data", value=str(ap_sel["data"]))
+
+        col_a1, col_a2 = st.columns(2)
+        with col_a1:
+          btn_salvar_ap = st.form_submit_button("Salvar Alterações do Aporte")
+        with col_a2:
+          btn_excluir_ap = st.form_submit_button("🗑️ Excluir Aporte")
+
+        if btn_salvar_ap:
+          try:
+            conexao = obter_conexao()
+            cursor = conexao.cursor()
+            cursor.execute(
+                "UPDATE desafio_aportes SET local_aplicacao = %s, valor = %s,"
+                " data = %s WHERE id = %s",
+                (
+                    novo_local.strip(),
+                    float(novo_valor),
+                    nova_data.strip(),
+                    int(aporte_id_sel),
+                ),
+            )
+            conexao.commit()
+            cursor.close()
+            conexao.close()
+            st.success("Aporte atualizado com sucesso!")
+            st.rerun()
+          except Exception as e:
+            st.error(f"Erro ao atualizar aporte: {e}")
+
+        if btn_excluir_ap:
+          try:
+            conexao = obter_conexao()
+            cursor = conexao.cursor()
+            cursor.execute(
+                "DELETE FROM desafio_aportes WHERE id = %s",
+                (int(aporte_id_sel),),
+            )
+            conexao.commit()
+            cursor.close()
+            conexao.close()
+            st.success("Aporte excluído com sucesso!")
+            st.rerun()
+          except Exception as e:
+            st.error(f"Erro ao excluir aporte: {e}")
   else:
     st.info("Nenhum aporte registrado ainda.")
 
