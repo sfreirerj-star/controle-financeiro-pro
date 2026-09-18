@@ -25,11 +25,17 @@ menu = st.sidebar.selectbox(
     ],
 )
 
-# Carregar dados do PostgreSQL para DataFrames do Pandas
+# Carregar dados do PostgreSQL para DataFrames do Pandas de forma segura
 try:
     conexao = obter_conexao()
     df_lancamentos = pd.read_sql_query("SELECT * FROM lancamentos", conexao)
-    df_aportes = pd.read_sql_query("SELECT * FROM aportes", conexao)
+    
+    # Tenta carregar aportes (pode estar numa tabela chamada 'aportes' ou 'investimentos')
+    try:
+        df_aportes = pd.read_sql_query("SELECT * FROM aportes", conexao)
+    except Exception:
+        df_aportes = pd.DataFrame(columns=["id", "data", "local_aplicacao", "descricao", "valor"])
+
     df_dividas = pd.read_sql_query("SELECT * FROM dividas", conexao)
     conexao.close()
 except Exception:
@@ -42,7 +48,6 @@ except Exception:
     df_dividas = pd.DataFrame(
         columns=["id", "credor", "valor_total", "juros_mensal", "status"]
     )
-
 
 def fmt_moeda(valor):
     return (
@@ -82,12 +87,13 @@ if menu == "📊 Painel & Gráficos":
         if not df_lancamentos.empty
         else 0.0
     )
-    total_gastos = (
-        df_lancamentos[df_lancamentos["tipo_clean"].isin(["despesa", "débito", "debito", "saida"])]["valor"].sum()
-        if not df_lancamentos.empty
-        else 0.0
-    )
-    total_aportes = df_aportes["valor"].sum() if not df_aportes.empty and "valor" in df_aportes.columns else 0.0
+
+  # Tratamento numérico rigoroso para aportes
+    if not df_aportes.empty and "valor" in df_aportes.columns:
+        df_aportes["valor"] = pd.to_numeric(df_aportes["valor"], errors="coerce").fillna(0.0)
+        total_aportes = df_aportes["valor"].sum()
+    else:
+        total_aportes = 0.0
 
     # Saldo Atual: Entradas menos Gastos Comuns menos Aportes
     saldo = total_receitas - total_gastos - total_aportes
