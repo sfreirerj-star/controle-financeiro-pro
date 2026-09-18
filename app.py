@@ -1,68 +1,17 @@
 from datetime import datetime
-import os
 import pandas as pd
 import plotly.express as px
-import sqlite3
 import streamlit as st
+
+# Importa as funções de conexão unificadas do ficheiro database.py na raiz
+from database import inicializar_banco, obter_conexao
 
 # Configuração da Página
 st.set_page_config(
     page_title="Controle Financeiro Pro", page_icon="💰", layout="wide"
 )
 
-# Caminho absoluto para garantir que apanha o financas.db na mesma pasta do app.py
-DIRETORIO_ATUAL = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(DIRETORIO_ATUAL, "financas.db")
-
-
-def obter_conexao():
-  return sqlite3.connect(DB_PATH)
-
-
-# Inicializar as tabelas do banco de dados local SQLite
-def inicializar_banco():
-  conexao = obter_conexao()
-  cursor = conexao.cursor()
-
-  # Tabela de créditos e débitos operacionais
-  cursor.execute("""
-        CREATE TABLE IF NOT EXISTS lancamentos (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            data TEXT,
-            tipo TEXT,
-            categoria TEXT,
-            descricao TEXT,
-            valor REAL
-        )
-    """)
-
-  # Tabela dedicada aos valores investidos/aportes
-  cursor.execute("""
-        CREATE TABLE IF NOT EXISTS aportes (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            data TEXT,
-            local_aplicacao TEXT,
-            descricao TEXT,
-            valor REAL
-        )
-    """)
-
-  # Tabela de dívidas
-  cursor.execute("""
-        CREATE TABLE IF NOT EXISTS dividas (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            credor TEXT,
-            valor_total REAL,
-            juros_mensal REAL,
-            status TEXT
-        )
-    """)
-
-  conexao.commit()
-  cursor.close()
-  conexao.close()
-
-
+# Inicializar as tabelas do banco de dados local SQLite centralizado
 inicializar_banco()
 
 menu = st.sidebar.selectbox(
