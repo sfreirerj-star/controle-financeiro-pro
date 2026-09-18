@@ -1,6 +1,6 @@
 from datetime import datetime
-import matplotlib.pyplot as plt
 import pandas as pd
+import plotly.express as px
 import psycopg2
 import streamlit as st
 
@@ -127,17 +127,24 @@ if menu == "📊 Painel & Gráficos":
 
     st.divider()
 
-    # Gráficos com Matplotlib
+    # Gráfico Interativo com Plotly
     st.subheader("📊 Distribuição de Despesas por Categoria")
     df_despesas = df_lancamentos[df_lancamentos["tipo"] == "Despesa"]
     if not df_despesas.empty:
-      cat_soma = df_despesas.groupby("categoria")["valor"].sum()
-      fig, ax = plt.subplots(figsize=(6, 4))
-      cat_soma.plot(kind="bar", ax=ax, color="#ff4b4b")
-      ax.set_ylabel("Valor (R$)")
-      ax.set_xlabel("Categoria")
-      plt.xticks(rotation=45, ha="right")
-      st.pyplot(fig)
+      df_cat = (
+          df_despesas.groupby("categoria")["valor"].sum().reset_index()
+      )
+      fig = px.bar(
+          df_cat,
+          x="categoria",
+          y="valor",
+          text="valor",
+          color="categoria",
+          labels={"categoria": "Categoria", "valor": "Valor (R$)"},
+      )
+      fig.update_traces(texttemplate="R$ %{text:.2f}", textposition="outside")
+      fig.update_layout(showlegend=False, xaxis_tickangle=-45)
+      st.plotly_chart(fig, use_container_width=True)
     else:
       st.info("Nenhuma despesa registrada para gerar gráficos.")
 
