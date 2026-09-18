@@ -119,20 +119,44 @@ if menu == "📊 Painel & Gráficos":
     total_receitas = df_lancamentos[df_lancamentos["tipo"] == "Receita"][
         "valor"
     ].sum()
-    total_saidas = df_lancamentos[df_lancamentos["tipo"] == "Despesa"][
+
+    # Considera como gasto apenas despesas que NÃO são investimentos/aportes de reserva
+    df_gastos_reais = df_lancamentos[
+        (df_lancamentos["tipo"] == "Despesa")
+        & (df_lancamentos["categoria"] != "Investimento / Reserva")
+        & (
+            df_lancamentos["local_aplicacao"].isna()
+            | (df_lancamentos["local_aplicacao"] == "")
+        )
+    ]
+    total_saidas_reais = df_gastos_reais["valor"].sum()
+
+    # Total de aportes guardados para exibir separadamente
+    df_aportes_total = df_lancamentos[
+        (df_lancamentos["categoria"] == "Investimento / Reserva")
+        | (
+            df_lancamentos["local_aplicacao"].notna()
+            & (df_lancamentos["local_aplicacao"] != "")
+        )
+    ]
+    total_aportes = df_aportes_total["valor"].sum()
+
+    # Saldo geral desconta tanto os gastos quanto o dinheiro guardado em investimentos
+    total_despesas_geral = df_lancamentos[df_lancamentos["tipo"] == "Despesa"][
         "valor"
     ].sum()
-    saldo = total_receitas - total_saidas
+    saldo = total_receitas - total_despesas_geral
 
     st.subheader("Resumo do Mês e Visualização Gráfica")
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
     col1.metric("Entradas", fmt_moeda(total_receitas))
-    col2.metric("Saídas (Gastos + Investimentos)", fmt_moeda(total_saidas))
+    col2.metric("Gastos Reais", fmt_moeda(total_saidas_reais))
+    col3.metric("Total em Aportes", fmt_moeda(total_aportes))
 
     if saldo >= 0:
-      col3.metric("Saldo Atual", fmt_moeda(saldo), delta="No Azul 💙")
+      col4.metric("Saldo Atual", fmt_moeda(saldo), delta="No Azul 💙")
     else:
-      col3.metric(
+      col4.metric(
           "Saldo Atual",
           fmt_moeda(saldo),
           delta="No Vermelho 🔴",
@@ -141,11 +165,10 @@ if menu == "📊 Painel & Gráficos":
 
     st.divider()
 
-    st.subheader("Distribuição dos Gastos e Investimentos por Categoria")
-    df_despesas = df_lancamentos[df_lancamentos["tipo"] == "Despesa"]
+    st.subheader("Distribuição dos Gastos Reais por Categoria")
 
-    if not df_despesas.empty:
-      df_cat = df_despesas.groupby("categoria")["valor"].sum().reset_index()
+    if not df_gastos_reais.empty:
+      df_cat = df_gastos_reais.groupby("categoria")["valor"].sum().reset_index()
 
       col_g1, col_g2 = st.columns(2)
 
@@ -179,7 +202,7 @@ if menu == "📊 Painel & Gráficos":
         fig_barras.update_layout(showlegend=False, xaxis_tickangle=-45)
         st.plotly_chart(fig_barras, use_container_width=True)
     else:
-      st.info("Nenhuma despesa ou aporte registrado para gerar gráficos.")
+      st.info("Nenhuma despesa comum registrada para gerar gráficos.")
 
     st.divider()
     st.subheader("Histórico Geral de Lançamentos")
@@ -187,7 +210,6 @@ if menu == "📊 Painel & Gráficos":
     if "valor" in df_exibicao.columns:
       df_exibicao["valor"] = df_exibicao["valor"].apply(fmt_moeda)
 
-    # Seleção dinâmica segura para evitar KeyError caso alguma coluna mude
     colunas_desejadas = [
         "id",
         "data",
