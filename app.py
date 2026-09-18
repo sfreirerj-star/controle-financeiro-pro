@@ -1,18 +1,17 @@
 from datetime import datetime
 import pandas as pd
 import plotly.express as px
+import psycopg2
 import streamlit as st
-
-# Importa as funções de conexão unificadas do ficheiro database.py na raiz
-from database import inicializar_banco, obter_conexao
 
 # Configuração da Página
 st.set_page_config(
     page_title="Controle Financeiro Pro", page_icon="💰", layout="wide"
 )
 
-# Inicializar as tabelas do banco de dados local SQLite centralizado
-inicializar_banco()
+def obter_conexao():
+    """Retorna a conexão com a base de dados PostgreSQL centralizada nos secrets."""
+    return psycopg2.connect(st.secrets["DATABASE_URL"])
 
 menu = st.sidebar.selectbox(
     "Menu Principal",
@@ -26,7 +25,7 @@ menu = st.sidebar.selectbox(
     ],
 )
 
-# Carregar dados do banco SQLite local para DataFrames do Pandas
+# Carregar dados do PostgreSQL para DataFrames do Pandas
 try:
     conexao = obter_conexao()
     df_lancamentos = pd.read_sql_query("SELECT * FROM lancamentos", conexao)
@@ -90,7 +89,7 @@ if menu == "📊 Painel & Gráficos":
     )
     total_aportes = df_aportes["valor"].sum() if not df_aportes.empty else 0.0
 
-    # Saldo Atual: Receitas menos Despesas Correntes menos Aportes (dinheiro guardado sai da conta)
+    # Saldo Atual: Receitas menos Despesas Correntes menos Aportes
     saldo = total_receitas - total_gastos - total_aportes
 
     st.subheader("Resumo do Mês e Visualização Gráfica")
@@ -113,7 +112,6 @@ if menu == "📊 Painel & Gráficos":
 
     st.subheader("Distribuição de Gastos e Investimentos (Visão Consolidada)")
 
-    # Preparar dados para os gráficos unindo despesas e aportes como "Investimentos"
     df_gastos_grafico = (
         df_lancamentos[df_lancamentos["tipo_clean"].isin(["despesa", "débito", "debito", "saida"])].copy()
         if not df_lancamentos.empty
@@ -202,8 +200,7 @@ elif menu == "➕ Novo Lançamento":
                     conexao = obter_conexao()
                     cursor = conexao.cursor()
                     cursor.execute(
-                        "INSERT INTO lancamentos (data, tipo, categoria, descricao,"
-                        " valor) VALUES (?, ?, ?, ?, ?)",
+                        "INSERT INTO lancamentos (data, tipo, categoria, descricao, valor) VALUES (%s, %s, %s, %s, %s)",
                         (data_l, tipo_l, categoria_l, descricao_l, float(valor_l)),
                     )
                     conexao.commit()
@@ -270,8 +267,7 @@ elif menu == "➕ Novo Lançamento":
                     conexao = obter_conexao()
                     cursor = conexao.cursor()
                     cursor.execute(
-                        "INSERT INTO aportes (data, local_aplicacao, descricao, valor)"
-                        " VALUES (?, ?, ?, ?)",
+                        "INSERT INTO aportes (data, local_aplicacao, descricao, valor) VALUES (%s, %s, %s, %s)",
                         (
                             data_aporte.strip(),
                             local_final,
@@ -326,8 +322,7 @@ elif menu == "📋 Gerenciar Lançamentos":
                         conexao = obter_conexao()
                         cursor = conexao.cursor()
                         cursor.execute(
-                            "UPDATE lancamentos SET tipo = ?, categoria = ?, descricao ="
-                            " ?, valor = ?, data = ? WHERE id = ?",
+                            "UPDATE lancamentos SET tipo = %s, categoria = %s, descricao = %s, valor = %s, data = %s WHERE id = %s",
                             (
                                 tipo_g,
                                 cat_g.strip(),
@@ -346,7 +341,7 @@ elif menu == "📋 Gerenciar Lançamentos":
                     if btn_excluir:
                         conexao = obter_conexao()
                         cursor = conexao.cursor()
-                        cursor.execute("DELETE FROM lancamentos WHERE id = ?", (int(id_sel),))
+                        cursor.execute("DELETE FROM lancamentos WHERE id = %s", (int(id_sel),))
                         conexao.commit()
                         cursor.close()
                         conexao.close()
@@ -385,8 +380,7 @@ elif menu == "📋 Gerenciar Lançamentos":
                         conexao = obter_conexao()
                         cursor = conexao.cursor()
                         cursor.execute(
-                            "UPDATE aportes SET local_aplicacao = ?, descricao = ?,"
-                            " valor = ?, data = ? WHERE id = ?",
+                            "UPDATE aportes SET local_aplicacao = %s, descricao = %s, valor = %s, data = %s WHERE id = %s",
                             (
                                 loc_g.strip(),
                                 desc_ap_g.strip(),
@@ -404,7 +398,7 @@ elif menu == "📋 Gerenciar Lançamentos":
                     if btn_excluir_ap:
                         conexao = obter_conexao()
                         cursor = conexao.cursor()
-                        cursor.execute("DELETE FROM aportes WHERE id = ?", (int(id_ap_sel),))
+                        cursor.execute("DELETE FROM aportes WHERE id = %s", (int(id_ap_sel),))
                         conexao.commit()
                         cursor.close()
                         conexao.close()
