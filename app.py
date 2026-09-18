@@ -56,7 +56,7 @@ if menu == "📊 Painel & Gráficos":
         "Aplicativo unificado de controle de créditos, débitos e investimentos."
     )
 
-    # Tratamento flexível para capturar receitas e despesas independentemente de maiúsculas/minúsculas
+  # Tratamento flexível para capturar receitas e despesas independentemente de maiúsculas/minúsculas
     if not df_lancamentos.empty and "valor" in df_lancamentos.columns:
         df_lancamentos["valor"] = pd.to_numeric(
             df_lancamentos["valor"], errors="coerce"
@@ -77,7 +77,7 @@ if menu == "📊 Painel & Gráficos":
             columns=["id", "data", "local_aplicacao", "descricao", "valor"]
         )
 
-   total_receitas = (
+    total_receitas = (
         df_lancamentos[df_lancamentos["tipo_clean"].isin(["receita", "crédito", "credito", "entrada"])]["valor"].sum()
         if not df_lancamentos.empty
         else 0.0
@@ -89,7 +89,7 @@ if menu == "📊 Painel & Gráficos":
     )
     total_aportes = df_aportes["valor"].sum() if not df_aportes.empty and "valor" in df_aportes.columns else 0.0
 
-    # Saldo Atual: Entradas menos Gastos Comuns menos Aportes (o dinheiro investido/guardado sai da conta disponível)
+    # Saldo Atual: Entradas menos Gastos Comuns menos Aportes
     saldo = total_receitas - total_gastos - total_aportes
 
     st.subheader("Resumo do Mês e Visualização Gráfica")
