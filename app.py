@@ -30,7 +30,7 @@ try:
     conexao = obter_conexao()
     df_lancamentos = pd.read_sql_query("SELECT * FROM lancamentos", conexao)
     
-    # Tenta carregar aportes (pode estar numa tabela chamada 'aportes' ou 'investimentos')
+    # Tenta carregar aportes
     try:
         df_aportes = pd.read_sql_query("SELECT * FROM aportes", conexao)
     except Exception:
@@ -49,6 +49,13 @@ except Exception:
         columns=["id", "credor", "valor_total", "juros_mensal", "status"]
     )
 
+# Tratamento numérico rigoroso para aportes globalmente (evita erros de escopo)
+if not df_aportes.empty and "valor" in df_aportes.columns:
+    df_aportes["valor"] = pd.to_numeric(df_aportes["valor"], errors="coerce").fillna(0.0)
+    total_aportes = df_aportes["valor"].sum()
+else:
+    total_aportes = 0.0
+
 def fmt_moeda(valor):
     return (
         f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
@@ -61,7 +68,7 @@ if menu == "📊 Painel & Gráficos":
         "Aplicativo unificado de controle de créditos, débitos e investimentos."
     )
 
-  # Tratamento flexível para capturar receitas e despesas independentemente de maiúsculas/minúsculas
+    # Tratamento flexível para capturar receitas e despesas independentemente de maiúsculas/minúsculas
     if not df_lancamentos.empty and "valor" in df_lancamentos.columns:
         df_lancamentos["valor"] = pd.to_numeric(
             df_lancamentos["valor"], errors="coerce"
@@ -73,27 +80,17 @@ if menu == "📊 Painel & Gráficos":
         )
         df_lancamentos["tipo_clean"] = ""
 
-    if not df_aportes.empty and "valor" in df_aportes.columns:
-        df_aportes["valor"] = pd.to_numeric(
-            df_aportes["valor"], errors="coerce"
-        ).fillna(0.0)
-    else:
-        df_aportes = pd.DataFrame(
-            columns=["id", "data", "local_aplicacao", "descricao", "valor"]
-        )
-
     total_receitas = (
         df_lancamentos[df_lancamentos["tipo_clean"].isin(["receita", "crédito", "credito", "entrada"])]["valor"].sum()
         if not df_lancamentos.empty
         else 0.0
     )
 
-  # Tratamento numérico rigoroso para aportes
-    if not df_aportes.empty and "valor" in df_aportes.columns:
-        df_aportes["valor"] = pd.to_numeric(df_aportes["valor"], errors="coerce").fillna(0.0)
-        total_aportes = df_aportes["valor"].sum()
-    else:
-        total_aportes = 0.0
+    total_gastos = (
+        df_lancamentos[df_lancamentos["tipo_clean"].isin(["despesa", "débito", "debito", "saida"])]["valor"].sum()
+        if not df_lancamentos.empty
+        else 0.0
+    )
 
     # Saldo Atual: Entradas menos Gastos Comuns menos Aportes
     saldo = total_receitas - total_gastos - total_aportes
