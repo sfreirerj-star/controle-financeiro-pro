@@ -2,6 +2,17 @@ from datetime import datetime
 import pandas as pd
 import psycopg2
 import streamlit as st
+import os
+import sys
+
+# Adiciona a pasta raiz ao caminho do Python para conseguir importar o database.py
+sys.path.append(
+    os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+)
+from database import inicializar_banco, obter_conexao
+
+# Garante que as tabelas estão prontas e abre a conexão correta
+inicializar_banco()
 
 st.set_page_config(
     page_title="Desafio Reserva & Simulador", page_icon="🎯", layout="wide"
