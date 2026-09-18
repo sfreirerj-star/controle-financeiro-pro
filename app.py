@@ -99,23 +99,39 @@ if menu == "📊 Painel & Gráficos":
   st.title("💰 Controle Financeiro - Sair do Vermelho")
   st.write("Aplicativo de controle total de créditos, débitos e investimentos.")
 
-  if not df_lancamentos.empty and "valor" in df_lancamentos.columns:
-    df_lancamentos["valor"] = pd.to_numeric(
-        df_lancamentos["valor"], errors="coerce"
-    ).fillna(0.0)
+  if not df_lancamentos.empty or not df_aportes.empty:
+    if not df_lancamentos.empty and "valor" in df_lancamentos.columns:
+      df_lancamentos["valor"] = pd.to_numeric(
+          df_lancamentos["valor"], errors="coerce"
+      ).fillna(0.0)
+    else:
+      df_lancamentos = pd.DataFrame(
+          columns=["id", "data", "tipo", "categoria", "descricao", "valor"]
+      )
+
+    if not df_aportes.empty and "valor" in df_aportes.columns:
+      df_aportes["valor"] = pd.to_numeric(
+          df_aportes["valor"], errors="coerce"
+      ).fillna(0.0)
+    else:
+      df_aportes = pd.DataFrame(columns=["id", "data", "valor", "local_aplicacao"])
 
     total_receitas = df_lancamentos[df_lancamentos["tipo"] == "Receita"][
         "valor"
     ].sum()
-    total_despesas = df_lancamentos[df_lancamentos["tipo"] == "Despesa"][
-        "valor"
-    ].sum()
-    saldo = total_receitas - total_despesas
+    total_despesas_comuns = df_lancamentos[
+        df_lancamentos["tipo"] == "Despesa"
+    ]["valor"].sum()
+    total_aportes = df_aportes["valor"].sum()
+
+    # Saídas totais incluem despesas comuns + investimentos/aportes feitos na conta
+    total_saidas = total_despesas_comuns + total_aportes
+    saldo = total_receitas - total_saidas
 
     st.subheader("Resumo do Mês e Visualização Gráfica")
     col1, col2, col3 = st.columns(3)
     col1.metric("Entradas", fmt_moeda(total_receitas))
-    col2.metric("Saídas", fmt_moeda(total_despesas))
+    col2.metric("Saídas", fmt_moeda(total_saidas))
 
     if saldo >= 0:
       col3.metric("Saldo Atual", fmt_moeda(saldo), delta="No Azul 💙")
@@ -129,13 +145,26 @@ if menu == "📊 Painel & Gráficos":
 
     st.divider()
 
-    st.subheader("Distribuição dos Gastos por Categoria")
-    df_despesas = df_lancamentos[df_lancamentos["tipo"] == "Despesa"]
+    st.subheader("Distribuição dos Gastos e Investimentos por Categoria")
 
-    if not df_despesas.empty:
-      df_cat = (
-          df_despesas.groupby("categoria")["valor"].sum().reset_index()
+    # Unificar despesas comuns e aportes para visualização completa nos gráficos
+    df_despesas_comuns = df_lancamentos[
+        df_lancamentos["tipo"] == "Despesa"
+    ].copy()
+    if not df_aportes.empty:
+      df_aportes_virtual = pd.DataFrame({
+          "categoria": ["Investimento / Reserva"] * len(df_aportes),
+          "valor": df_aportes["valor"],
+      })
+      df_grafico = pd.concat(
+          [df_despesas_comuns[["categoria", "valor"]], df_aportes_virtual],
+          ignore_index=True,
       )
+    else:
+      df_grafico = df_despesas_comuns[["categoria", "valor"]]
+
+    if not df_grafico.empty:
+      df_cat = df_grafico.groupby("categoria")["valor"].sum().reset_index()
 
       col_g1, col_g2 = st.columns(2)
 
@@ -169,15 +198,18 @@ if menu == "📊 Painel & Gráficos":
         fig_barras.update_layout(showlegend=False, xaxis_tickangle=-45)
         st.plotly_chart(fig_barras, use_container_width=True)
     else:
-      st.info("Nenhuma despesa registrada para gerar gráficos.")
+      st.info("Nenhuma despesa ou aporte registrado para gerar gráficos.")
 
     st.divider()
-    st.subheader("Histórico de Lançamentos")
-    df_exibicao = df_lancamentos.tail(10).copy()
-    df_exibicao["valor"] = df_exibicao["valor"].apply(fmt_moeda)
-    st.dataframe(df_exibicao.set_index("id"), use_container_width=True)
+    st.subheader("Histórico de Lançamentos Comuns")
+    if not df_lancamentos.empty:
+      df_exibicao = df_lancamentos.tail(10).copy()
+      df_exibicao["valor"] = df_exibicao["valor"].apply(fmt_moeda)
+      st.dataframe(df_exibicao.set_index("id"), use_container_width=True)
+    else:
+      st.info("Nenhum lançamento comum registrado.")
   else:
-    st.info("Nenhum lançamento registrado ainda.")
+    st.info("Nenhum registro encontrado.")
 
 elif menu == "➕ Novo Lançamento":
   st.title("➕ Central de Lançamentos e Aportes")
@@ -225,8 +257,8 @@ elif menu == "➕ Novo Lançamento":
   else:
     st.subheader("📥 Registrar Novo Depósito / Aporte na Reserva")
     st.write(
-        "Ao salvar por aqui, o valor será somado ao seu Desafio e lançado"
-        " automaticamente como uma **Despesa** no seu fluxo de caixa."
+        "Ao salvar por aqui, o valor será somado ao seu Desafio e abatido"
+        " automaticamente do seu saldo em conta corrente."
     )
 
     with st.form("form_aporte_integrado"):
@@ -257,7 +289,7 @@ elif menu == "➕ Novo Lançamento":
       local_sel = st.selectbox("Local da Aplicação", locais_geral)
       local_outro = st.text_input(
           "Especifique o Banco / Corretora (Preencha caso tenha selecionado"
-          " 'Outro' ou queira ajustar)"
+          " 'Outro')"
       )
 
       if st.form_submit_button("💾 Salvar Aporte no Desafio"):
@@ -281,22 +313,10 @@ elif menu == "➕ Novo Lançamento":
               ),
           )
 
-          cursor.execute(
-              "INSERT INTO lancamentos (data, tipo, categoria, descricao,"
-              " valor) VALUES (%s, %s, %s, %s, %s)",
-              (
-                  data_aporte.strip(),
-                  "Despesa",
-                  "Investimento / Reserva",
-                  f"Aporte: {local_final}",
-                  float(valor_aporte),
-              ),
-          )
-
           conexao.commit()
           cursor.close()
           conexao.close()
-          st.success("Aporte registrado com sucesso!")
+          st.success("Aporte registrado com sucesso e saldo atualizado!")
           st.rerun()
         except ValueError:
           st.error("Data inválida. Utilize o formato DD/MM/AAAA.")
@@ -304,7 +324,7 @@ elif menu == "➕ Novo Lançamento":
           st.error(f"Erro ao salvar: {e}")
 
 elif menu == "📋 Gerenciar Lançamentos":
-  st.title("📋 Gerenciamento de Lançamentos")
+  st.title("📋 Gerenciamento de Lançamentos Comuns")
   if not df_lancamentos.empty:
     ids_lanc = df_lancamentos["id"].tolist()
     id_sel = st.selectbox("Selecione o Lançamento para Editar ou Excluir", ids_lanc)
@@ -339,7 +359,7 @@ elif menu == "📋 Gerenciar Lançamentos":
           except Exception as e:
             st.error(f"Erro ao excluir: {e}")
   else:
-    st.info("Nenhum lançamento para gerenciar.")
+    st.info("Nenhum lançamento comum para gerenciar.")
 
 elif menu == "🎯 Desafio Reserva / Aportes":
   st.title("🎯 Gerenciamento do Desafio de Reserva")
@@ -423,7 +443,7 @@ elif menu == "🎯 Desafio Reserva / Aportes":
             conexao.commit()
             cursor.close()
             conexao.close()
-            st.success("Aporte excluído com sucesso!")
+            st.success("Aporte excluído com sucesso e saldo restituído!")
             st.rerun()
           except Exception as e:
             st.error(f"Erro ao excluir aporte: {e}")
