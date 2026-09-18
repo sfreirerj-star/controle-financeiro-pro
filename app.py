@@ -36,9 +36,6 @@ def inicializar_banco():
             ALTER TABLE lancamentos ADD COLUMN IF NOT EXISTS local_aplicacao TEXT;
         """)
     cursor.execute("""
-            ALTER TABLE lancamentos ADD COLUMN IF NOT EXISTS is_aporte BOOLEAN DEFAULT FALSE;
-        """)
-    cursor.execute("""
             CREATE TABLE IF NOT EXISTS dividas (
                 id SERIAL PRIMARY KEY,
                 credor TEXT,
@@ -98,6 +95,19 @@ def fmt_moeda(valor):
   )
 
 
+# Função auxiliar robusta para identificar aportes em todo o sistema
+def obter_df_aportes(df):
+  if df.empty:
+    return pd.DataFrame(columns=df.columns)
+  cond_cat = df["categoria"].str.contains("Investimento", case=False, na=False)
+  cond_loc = (
+      df["local_aplicacao"].notna()
+      & (df["local_aplicacao"] != "")
+      & (df["local_aplicacao"].astype(str).str.lower() != "none")
+  )
+  return df[cond_cat | cond_loc]
+
+
 if menu == "📊 Painel & Gráficos":
   st.title("💰 Controle Financeiro - Sair do Vermelho")
   st.write(
@@ -126,43 +136,41 @@ if menu == "📊 Painel & Gráficos":
         "valor"
     ].sum()
 
-    # Identificar aportes de forma robusta
-    if "local_aplicacao" in df_lancamentos.columns:
-      df_aportes_total = df_lancamentos[
-          (df_lancamentos["categoria"].str.contains("Investimento", na=False))
-          | (
-              df_lancamentos["local_aplicacao"].notna()
-              & (df_lancamentos["local_aplicacao"] != "")
-          )
-      ]
-    else:
-      df_aportes_total = df_lancamentos[
-          df_lancamentos["categoria"].str.contains("Investimento", na=False)
-      ]
-
+    # Obter todos os aportes de forma unificada
+    df_aportes_total = obter_df_aportes(df_lancamentos)
     total_aportes = (
         df_aportes_total["valor"].sum() if not df_aportes_total.empty else 0.0
     )
 
-    # Gastos reais comuns (excluindo os investimentos das despesas comuns do dia a dia)
-    if "local_aplicacao" in df_lancamentos.columns:
+    # Gastos reais comuns (excluindo os aportes de investimento)
+    ids_aportes = (
+        df_aportes_total["id"].tolist() if "id" in df_aportes_total.columns else []
+    )
+    if ids_aportes and "id" in df_lancamentos.columns:
       df_gastos_reais = df_lancamentos[
           (df_lancamentos["tipo"] == "Despesa")
-          & (~df_lancamentos["categoria"].str.contains("Investimento", na=False))
+          & (~df_lancamentos["id"].isin(ids_aportes))
+      ].copy()
+    else:
+      df_gastos_reais = df_lancamentos[
+          (df_lancamentos["tipo"] == "Despesa")
+          & (
+              ~df_lancamentos["categoria"].str.contains(
+                  "Investimento", case=False, na=False
+              )
+          )
           & (
               df_lancamentos["local_aplicacao"].isna()
               | (df_lancamentos["local_aplicacao"] == "")
           )
       ].copy()
-    else:
-      df_gastos_reais = df_lancamentos[
-          (df_lancamentos["tipo"] == "Despesa")
-          & (~df_lancamentos["categoria"].str.contains("Investimento", na=False))
-      ].copy()
 
     total_gastos_comuns = df_gastos_reais["valor"].sum()
 
-    # Adicionar os aportes no DataFrame de exibição dos gráficos com a categoria "Investimentos"
+    # Saldo Atual real: Entradas menos Gastos Comuns menos Aportes/Investimentos
+    saldo = total_receitas - total_gastos_comuns - total_aportes
+
+    # Montar DataFrame para os gráficos (incluindo os investimentos com a categoria "Investimentos")
     df_gastos_grafico = df_gastos_reais.copy()
     if not df_aportes_total.empty:
       df_ap_graf = df_aportes_total.copy()
@@ -170,11 +178,6 @@ if menu == "📊 Painel & Gráficos":
       df_gastos_grafico = pd.concat(
           [df_gastos_grafico, df_ap_graf], ignore_index=True
       )
-
-    total_saidas_exibicao = df_gastos_grafico["valor"].sum()
-
-    # Saldo Atual real desconta tanto as despesas comuns quanto os aportes enviados para aplicações
-    saldo = total_receitas - total_gastos_comuns - total_aportes
 
     st.subheader("Resumo do Mês e Visualização Gráfica")
     col1, col2, col3, col4 = st.columns(4)
@@ -472,18 +475,7 @@ elif menu == "📋 Gerenciar Lançamentos":
 elif menu == "🎯 Desafio Reserva / Aportes":
   st.title("🎯 Painel Consolidado de Reservas e Aportes")
 
-  if "local_aplicacao" in df_lancamentos.columns:
-    df_aportes = df_lancamentos[
-        (df_lancamentos["categoria"].str.contains("Investimento", na=False))
-        | (
-            df_lancamentos["local_aplicacao"].notna()
-            & (df_lancamentos["local_aplicacao"] != "")
-        )
-    ]
-  else:
-    df_aportes = df_lancamentos[
-        df_lancamentos["categoria"].str.contains("Investimento", na=False)
-    ]
+  df_aportes = obter_df_aportes(df_lancamentos)
 
   if not df_aportes.empty:
     total_guardado = df_aportes["valor"].sum()
