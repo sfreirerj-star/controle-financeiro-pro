@@ -52,10 +52,7 @@ def inicializar_banco():
     cursor.close()
     conexao.close()
   except Exception as e:
-    st.error(
-        f"Erro ao conectar com o banco de dados no Supabase: {e}. Verifique a"
-        " URL nos Secrets."
-    )
+    st.error(f"Erro ao conectar com o banco de dados no Supabase: {e}")
     st.stop()
 
 
@@ -127,6 +124,22 @@ if menu == "📊 Painel & Gráficos":
           delta="No Vermelho 🔴",
           delta_color="inverse",
       )
+
+    st.divider()
+
+    # Gráficos com Matplotlib
+    st.subheader("📊 Distribuição de Despesas por Categoria")
+    df_despesas = df_lancamentos[df_lancamentos["tipo"] == "Despesa"]
+    if not df_despesas.empty:
+      cat_soma = df_despesas.groupby("categoria")["valor"].sum()
+      fig, ax = plt.subplots(figsize=(6, 4))
+      cat_soma.plot(kind="bar", ax=ax, color="#ff4b4b")
+      ax.set_ylabel("Valor (R$)")
+      ax.set_xlabel("Categoria")
+      plt.xticks(rotation=45, ha="right")
+      st.pyplot(fig)
+    else:
+      st.info("Nenhuma despesa registrada para gerar gráficos.")
 
     st.divider()
     st.subheader("Histórico de Lançamentos")
