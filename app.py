@@ -185,20 +185,25 @@ if menu == "📊 Painel & Gráficos":
     st.subheader("Histórico Geral de Lançamentos")
     df_exibicao = df_lancamentos.tail(10).copy()
     df_exibicao["valor"] = df_exibicao["valor"].apply(fmt_moeda)
-    st.dataframe(
-        df_exibicao[
-            [
-                "id",
-                "data",
-                "tipo",
-                "categoria",
-                "descricao",
-                "valor",
-                "local_aplicacao",
-            ]
-        ].set_index("id"),
-        use_container_width=True,
-    )
+
+    # Verifica se a coluna 'id' existe antes de tentar definir como índice
+    if "id" in df_exibicao.columns:
+      st.dataframe(
+          df_exibicao[
+              [
+                  "id",
+                  "data",
+                  "tipo",
+                  "categoria",
+                  "descricao",
+                  "valor",
+                  "local_aplicacao",
+              ]
+          ].set_index("id"),
+          use_container_width=True,
+      )
+    else:
+      st.dataframe(df_exibicao, use_container_width=True)
   else:
     st.info("Nenhum registro encontrado.")
 
@@ -263,7 +268,6 @@ elif menu == "➕ Novo Lançamento":
         "Outro (Personalizado)",
     ]
 
-    # Selectbox fora do form para atualizar a tela instantaneamente ao selecionar "Outro"
     local_sel = st.selectbox("Local da Aplicação", locais_geral)
 
     local_outro = ""
@@ -330,7 +334,7 @@ elif menu == "➕ Novo Lançamento":
 
 elif menu == "📋 Gerenciar Lançamentos":
   st.title("📋 Gerenciamento Geral de Lançamentos")
-  if not df_lancamentos.empty:
+  if not df_lancamentos.empty and "id" in df_lancamentos.columns:
     ids_lanc = df_lancamentos["id"].tolist()
     id_sel = st.selectbox("Selecione o Lançamento para Editar ou Excluir", ids_lanc)
 
@@ -402,7 +406,7 @@ elif menu == "📋 Gerenciar Lançamentos":
           except Exception as e:
             st.error(f"Erro ao excluir: {e}")
   else:
-    st.info("Nenhum lançamento para gerenciar.")
+    st.info("Nenhum lançamento para gerenciar ou coluna ID ausente.")
 
 elif menu == "🎯 Desafio Reserva / Aportes":
   st.title("🎯 Painel Consolidado de Reservas e Aportes")
@@ -434,28 +438,39 @@ elif menu == "🎯 Desafio Reserva / Aportes":
 
     st.divider()
     st.subheader("📋 Histórico de Aportes Registrados")
-    df_exibe_ap = df_aportes[
-        ["id", "data", "local_aplicacao", "descricao", "valor"]
-    ].copy()
+    df_exibe_ap = df_aportes.copy()
     df_exibe_ap["valor"] = df_exibe_ap["valor"].apply(fmt_moeda)
-    st.dataframe(
-        df_exibe_ap.rename(
-            columns={
-                "data": "Data",
-                "local_aplicacao": "Local",
-                "descricao": "Descrição",
-                "valor": "Valor",
-            }
-        ).set_index("id"),
-        use_container_width=True,
-    )
+
+    colunas_exibir = [
+        c
+        for c in ["id", "data", "local_aplicacao", "descricao", "valor"]
+        if c in df_exibe_ap.columns
+    ]
+    if "id" in colunas_exibir:
+      st.dataframe(
+          df_exibe_ap[colunas_exibir]
+          .rename(
+              columns={
+                  "data": "Data",
+                  "local_aplicacao": "Local",
+                  "descricao": "Descrição",
+                  "valor": "Valor",
+              }
+          )
+          .set_index("id"),
+          use_container_width=True,
+      )
+    else:
+      st.dataframe(df_exibe_ap[colunas_exibir], use_container_width=True)
   else:
     st.info("Nenhum aporte registrado na tabela unificada ainda.")
 
 elif menu == "⚠️ Raio-X de Dívidas":
   st.title("⚠️ Raio-X de Dívidas Ativas")
-  if not df_dividas.empty:
+  if not df_dividas.empty and "id" in df_dividas.columns:
     st.dataframe(df_dividas.set_index("id"), use_container_width=True)
+  elif not df_dividas.empty:
+    st.dataframe(df_dividas, use_container_width=True)
   else:
     st.info("Nenhuma dívida cadastrada no momento.")
 
