@@ -1,7 +1,8 @@
 from datetime import datetime
+import os
 import pandas as pd
 import plotly.express as px
-import psycopg2
+import sqlite3
 import streamlit as st
 
 # Configuração da Página
@@ -9,54 +10,56 @@ st.set_page_config(
     page_title="Controle Financeiro Pro", page_icon="💰", layout="wide"
 )
 
+# Caminho do Banco de Dados SQLite local
+DB_PATH = "financas.db"
 
-# Conexão com o Banco de Dados PostgreSQL no Supabase via Secrets
+
 def obter_conexao():
-  url_conexao = st.secrets["DATABASE_URL"]
-  return psycopg2.connect(url_conexao)
+  return sqlite3.connect(DB_PATH)
 
 
-# Inicializar as tabelas do banco de dados (Tabelas separadas: lancamentos e aportes)
+# Inicializar as tabelas do banco de dados local SQLite
 def inicializar_banco():
-  try:
-    conexao = obter_conexao()
-    cursor = conexao.cursor()
-    # Tabela de créditos e débitos operacionais
-    cursor.execute("""
-            CREATE TABLE IF NOT EXISTS lancamentos (
-                id SERIAL PRIMARY KEY,
-                data TEXT,
-                tipo TEXT,
-                categoria TEXT,
-                descricao TEXT,
-                valor REAL
-            )
-        """)
-    # Tabela dedicada aos valores investidos/aportes
-    cursor.execute("""
-            CREATE TABLE IF NOT EXISTS aportes (
-                id SERIAL PRIMARY KEY,
-                data TEXT,
-                local_aplicacao TEXT,
-                descricao TEXT,
-                valor REAL
-            )
-        """)
-    cursor.execute("""
-            CREATE TABLE IF NOT EXISTS dividas (
-                id SERIAL PRIMARY KEY,
-                credor TEXT,
-                valor_total REAL,
-                juros_mensal REAL,
-                status TEXT
-            )
-        """)
-    conexao.commit()
-    cursor.close()
-    conexao.close()
-  except Exception as e:
-    st.error(f"Erro ao conectar com o banco de dados no Supabase: {e}")
-    st.stop()
+  conexao = obter_conexao()
+  cursor = conexao.cursor()
+
+  # Tabela de créditos e débitos operacionais
+  cursor.execute("""
+        CREATE TABLE IF NOT EXISTS lancamentos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            data TEXT,
+            tipo TEXT,
+            categoria TEXT,
+            descricao TEXT,
+            valor REAL
+        )
+    """)
+
+  # Tabela dedicada aos valores investidos/aportes
+  cursor.execute("""
+        CREATE TABLE IF NOT EXISTS aportes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            data TEXT,
+            local_aplicacao TEXT,
+            descricao TEXT,
+            valor REAL
+        )
+    """)
+
+  # Tabela de dívidas
+  cursor.execute("""
+        CREATE TABLE IF NOT EXISTS dividas (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            credor TEXT,
+            valor_total REAL,
+            juros_mensal REAL,
+            status TEXT
+        )
+    """)
+
+  conexao.commit()
+  cursor.close()
+  conexao.close()
 
 
 inicializar_banco()
@@ -73,7 +76,7 @@ menu = st.sidebar.selectbox(
     ],
 )
 
-# Carregar dados do Supabase para DataFrames do Pandas
+# Carregar dados do banco SQLite local para DataFrames do Pandas
 try:
   conexao = obter_conexao()
   df_lancamentos = pd.read_sql_query("SELECT * FROM lancamentos", conexao)
@@ -246,7 +249,7 @@ elif menu == "➕ Novo Lançamento":
           cursor = conexao.cursor()
           cursor.execute(
               "INSERT INTO lancamentos (data, tipo, categoria, descricao,"
-              " valor) VALUES (%s, %s, %s, %s, %s)",
+              " valor) VALUES (?, ?, ?, ?, ?)",
               (data_l, tipo_l, categoria_l, descricao_l, float(valor_l)),
           )
           conexao.commit()
@@ -314,7 +317,7 @@ elif menu == "➕ Novo Lançamento":
           cursor = conexao.cursor()
           cursor.execute(
               "INSERT INTO aportes (data, local_aplicacao, descricao, valor)"
-              " VALUES (%s, %s, %s, %s)",
+              " VALUES (?, ?, ?, ?)",
               (
                   data_aporte.strip(),
                   local_final,
@@ -369,8 +372,8 @@ elif menu == "📋 Gerenciar Lançamentos":
             conexao = obter_conexao()
             cursor = conexao.cursor()
             cursor.execute(
-                "UPDATE lancamentos SET tipo = %s, categoria = %s, descricao ="
-                " %s, valor = %s, data = %s WHERE id = %s",
+                "UPDATE lancamentos SET tipo = ?, categoria = ?, descricao ="
+                " ?, valor = ?, data = ? WHERE id = ?",
                 (
                     tipo_g,
                     cat_g.strip(),
@@ -389,9 +392,7 @@ elif menu == "📋 Gerenciar Lançamentos":
           if btn_excluir:
             conexao = obter_conexao()
             cursor = conexao.cursor()
-            cursor.execute(
-                "DELETE FROM lancamentos WHERE id = %s", (int(id_sel),)
-            )
+            cursor.execute("DELETE FROM lancamentos WHERE id = ?", (int(id_sel),))
             conexao.commit()
             cursor.close()
             conexao.close()
@@ -430,8 +431,8 @@ elif menu == "📋 Gerenciar Lançamentos":
             conexao = obter_conexao()
             cursor = conexao.cursor()
             cursor.execute(
-                "UPDATE aportes SET local_aplicacao = %s, descricao = %s,"
-                " valor = %s, data = %s WHERE id = %s",
+                "UPDATE aportes SET local_aplicacao = ?, descricao = ?,"
+                " valor = ?, data = ? WHERE id = ?",
                 (
                     loc_g.strip(),
                     desc_ap_g.strip(),
@@ -449,7 +450,7 @@ elif menu == "📋 Gerenciar Lançamentos":
           if btn_excluir_ap:
             conexao = obter_conexao()
             cursor = conexao.cursor()
-            cursor.execute("DELETE FROM aportes WHERE id = %s", (int(id_ap_sel),))
+            cursor.execute("DELETE FROM aportes WHERE id = ?", (int(id_ap_sel),))
             conexao.commit()
             cursor.close()
             conexao.close()
