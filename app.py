@@ -32,6 +32,10 @@ def inicializar_banco():
                 local_aplicacao TEXT
             )
         """)
+    # Garante que a coluna local_aplicacao exista caso a tabela já tenha sido criada antes
+    cursor.execute("""
+            ALTER TABLE lancamentos ADD COLUMN IF NOT EXISTS local_aplicacao TEXT;
+        """)
     cursor.execute("""
             CREATE TABLE IF NOT EXISTS dividas (
                 id SERIAL PRIMARY KEY,
@@ -121,25 +125,34 @@ if menu == "📊 Painel & Gráficos":
     ].sum()
 
     # Considera como gasto apenas despesas que NÃO são investimentos/aportes de reserva
-    df_gastos_reais = df_lancamentos[
-        (df_lancamentos["tipo"] == "Despesa")
-        & (df_lancamentos["categoria"] != "Investimento / Reserva")
-        & (
-            df_lancamentos["local_aplicacao"].isna()
-            | (df_lancamentos["local_aplicacao"] == "")
-        )
-    ]
-    total_saidas_reais = df_gastos_reais["valor"].sum()
+    if "local_aplicacao" in df_lancamentos.columns:
+      df_gastos_reais = df_lancamentos[
+          (df_lancamentos["tipo"] == "Despesa")
+          & (df_lancamentos["categoria"] != "Investimento / Reserva")
+          & (
+              df_lancamentos["local_aplicacao"].isna()
+              | (df_lancamentos["local_aplicacao"] == "")
+          )
+      ]
 
-    # Total de aportes guardados para exibir separadamente
-    df_aportes_total = df_lancamentos[
-        (df_lancamentos["categoria"] == "Investimento / Reserva")
-        | (
-            df_lancamentos["local_aplicacao"].notna()
-            & (df_lancamentos["local_aplicacao"] != "")
-        )
-    ]
-    total_aportes = df_aportes_total["valor"].sum()
+      df_aportes_total = df_lancamentos[
+          (df_lancamentos["categoria"] == "Investimento / Reserva")
+          | (
+              df_lancamentos["local_aplicacao"].notna()
+              & (df_lancamentos["local_aplicacao"] != "")
+          )
+      ]
+    else:
+      df_gastos_reais = df_lancamentos[
+          (df_lancamentos["tipo"] == "Despesa")
+          & (df_lancamentos["categoria"] != "Investimento / Reserva")
+      ]
+      df_aportes_total = pd.DataFrame(columns=df_lancamentos.columns)
+
+    total_saidas_reais = df_gastos_reais["valor"].sum()
+    total_aportes = (
+        df_aportes_total["valor"].sum() if not df_aportes_total.empty else 0.0
+    )
 
     # Saldo geral desconta tanto os gastos quanto o dinheiro guardado em investimentos
     total_despesas_geral = df_lancamentos[df_lancamentos["tipo"] == "Despesa"][
@@ -375,13 +388,15 @@ elif menu == "📋 Gerenciar Lançamentos":
         desc_g = st.text_input("Descrição", value=str(lan_sel["descricao"]))
         val_g = st.number_input("Valor (R$)", value=float(lan_sel["valor"]))
         data_g = st.text_input("Data", value=str(lan_sel["data"]))
+        
+        local_atual = (
+            str(lan_sel["local_aplicacao"])
+            if "local_aplicacao" in lan_sel and pd.notna(lan_sel["local_aplicacao"])
+            else ""
+        )
         local_g = st.text_input(
             "Local da Aplicação (se houver)",
-            value=(
-                str(lan_sel["local_aplicacao"])
-                if pd.notna(lan_sel["local_aplicacao"])
-                else ""
-            ),
+            value=local_atual,
         )
 
         col_g1, col_g2 = st.columns(2)
@@ -435,30 +450,36 @@ elif menu == "📋 Gerenciar Lançamentos":
 elif menu == "🎯 Desafio Reserva / Aportes":
   st.title("🎯 Painel Consolidado de Reservas e Aportes")
 
-  df_aportes = df_lancamentos[
-      (df_lancamentos["categoria"] == "Investimento / Reserva")
-      | (
-          df_lancamentos["local_aplicacao"].notna()
-          & (df_lancamentos["local_aplicacao"] != "")
-      )
-  ]
+  if "local_aplicacao" in df_lancamentos.columns:
+    df_aportes = df_lancamentos[
+        (df_lancamentos["categoria"] == "Investimento / Reserva")
+        | (
+            df_lancamentos["local_aplicacao"].notna()
+            & (df_lancamentos["local_aplicacao"] != "")
+        )
+    ]
+  else:
+    df_aportes = df_lancamentos[
+        df_lancamentos["categoria"] == "Investimento / Reserva"
+    ]
 
   if not df_aportes.empty:
     total_guardado = df_aportes["valor"].sum()
     st.metric("Total Geral Guardado em Reservas", fmt_moeda(total_guardado))
 
     st.subheader("📊 Distribuição por Banco / Corretora")
-    df_resumo = (
-        df_aportes.groupby("local_aplicacao")["valor"].sum().reset_index()
-    )
-    df_resumo["% do Total"] = (
-        (df_resumo["valor"] / total_guardado) * 100
-    ).apply(lambda x: f"{x:.1f}%")
-    df_resumo["Valor Acumulado"] = df_resumo["valor"].apply(fmt_moeda)
-    df_tabela = df_resumo[
-        ["local_aplicacao", "Valor Acumulado", "% do Total"]
-    ].rename(columns={"local_aplicacao": "Instituição / Local"})
-    st.dataframe(df_tabela, use_container_width=True, hide_index=True)
+    if "local_aplicacao" in df_aportes.columns:
+      df_resumo = (
+          df_aportes.groupby("local_aplicacao")["valor"].sum().reset_index()
+      )
+      df_resumo["% do Total"] = (
+          (df_resumo["valor"] / total_guardado) * 100
+      ).apply(lambda x: f"{x:.1f}%")
+      df_resumo["Valor Acumulado"] = df_resumo["valor"].apply(fmt_moeda)
+      df_tabela = df_resumo[
+          ["local_aplicacao", "Valor Acumulado", "% do Total"]
+      ].rename(columns={"local_aplicacao": "Instituição / Local"})
+      st.dataframe(df_tabela, use_container_width=True, hide_index=True)
 
     st.divider()
     st.subheader("📋 Histórico de Aportes Registrados")
