@@ -184,26 +184,28 @@ if menu == "📊 Painel & Gráficos":
     st.divider()
     st.subheader("Histórico Geral de Lançamentos")
     df_exibicao = df_lancamentos.tail(10).copy()
-    df_exibicao["valor"] = df_exibicao["valor"].apply(fmt_moeda)
+    if "valor" in df_exibicao.columns:
+      df_exibicao["valor"] = df_exibicao["valor"].apply(fmt_moeda)
 
-    # Verifica se a coluna 'id' existe antes de tentar definir como índice
-    if "id" in df_exibicao.columns:
-      st.dataframe(
-          df_exibicao[
-              [
-                  "id",
-                  "data",
-                  "tipo",
-                  "categoria",
-                  "descricao",
-                  "valor",
-                  "local_aplicacao",
-              ]
-          ].set_index("id"),
-          use_container_width=True,
-      )
+    # Seleção dinâmica segura para evitar KeyError caso alguma coluna mude
+    colunas_desejadas = [
+        "id",
+        "data",
+        "tipo",
+        "categoria",
+        "descricao",
+        "valor",
+        "local_aplicacao",
+    ]
+    colunas_existentes = [
+        c for c in colunas_desejadas if c in df_exibicao.columns
+    ]
+    df_final = df_exibicao[colunas_existentes]
+
+    if "id" in df_final.columns:
+      st.dataframe(df_final.set_index("id"), use_container_width=True)
     else:
-      st.dataframe(df_exibicao, use_container_width=True)
+      st.dataframe(df_final, use_container_width=True)
   else:
     st.info("Nenhum registro encontrado.")
 
@@ -439,29 +441,35 @@ elif menu == "🎯 Desafio Reserva / Aportes":
     st.divider()
     st.subheader("📋 Histórico de Aportes Registrados")
     df_exibe_ap = df_aportes.copy()
-    df_exibe_ap["valor"] = df_exibe_ap["valor"].apply(fmt_moeda)
+    if "valor" in df_exibe_ap.columns:
+      df_exibe_ap["valor"] = df_exibe_ap["valor"].apply(fmt_moeda)
 
-    colunas_exibir = [
-        c
-        for c in ["id", "data", "local_aplicacao", "descricao", "valor"]
-        if c in df_exibe_ap.columns
+    colunas_desejadas_ap = [
+        "id",
+        "data",
+        "local_aplicacao",
+        "descricao",
+        "valor",
     ]
-    if "id" in colunas_exibir:
+    colunas_existentes_ap = [
+        c for c in colunas_desejadas_ap if c in df_exibe_ap.columns
+    ]
+    df_final_ap = df_exibe_ap[colunas_existentes_ap]
+
+    if "id" in df_final_ap.columns:
       st.dataframe(
-          df_exibe_ap[colunas_exibir]
-          .rename(
+          df_final_ap.rename(
               columns={
                   "data": "Data",
                   "local_aplicacao": "Local",
                   "descricao": "Descrição",
                   "valor": "Valor",
               }
-          )
-          .set_index("id"),
+          ).set_index("id"),
           use_container_width=True,
       )
     else:
-      st.dataframe(df_exibe_ap[colunas_exibir], use_container_width=True)
+      st.dataframe(df_final_ap, use_container_width=True)
   else:
     st.info("Nenhum aporte registrado na tabela unificada ainda.")
 
