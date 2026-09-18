@@ -10,8 +10,9 @@ st.set_page_config(
     page_title="Controle Financeiro Pro", page_icon="💰", layout="wide"
 )
 
-# Caminho do Banco de Dados SQLite local
-DB_PATH = "financas.db"
+# Caminho absoluto para garantir que apanha o financas.db na mesma pasta do app.py
+DIRETORIO_ATUAL = os.path.dirname(os.path.abspath(__file__))
+DB_PATH = os.path.join(DIRETORIO_ATUAL, "financas.db")
 
 
 def obter_conexao():
