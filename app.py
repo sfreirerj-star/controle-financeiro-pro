@@ -1,4 +1,4 @@
-from datetime import datetime
+ffrom datetime import datetime
 import pandas as pd
 import plotly.express as px
 import psycopg2
@@ -25,16 +25,19 @@ menu = st.sidebar.selectbox(
     ],
 )
 
-# Carregar dados do PostgreSQL para DataFrames do Pandas de forma segura
+# Carregar dados do PostgreSQL para DataFrames do Pandas de forma robusta
 try:
     conexao = obter_conexao()
     df_lancamentos = pd.read_sql_query("SELECT * FROM lancamentos", conexao)
     
-    # Tenta carregar aportes
+    # Tenta carregar aportes com fallback para nomes alternativos de tabela
     try:
         df_aportes = pd.read_sql_query("SELECT * FROM aportes", conexao)
     except Exception:
-        df_aportes = pd.DataFrame(columns=["id", "data", "local_aplicacao", "descricao", "valor"])
+        try:
+            df_aportes = pd.read_sql_query("SELECT * FROM investimentos", conexao)
+        except Exception:
+            df_aportes = pd.DataFrame(columns=["id", "data", "local_aplicacao", "descricao", "valor"])
 
     df_dividas = pd.read_sql_query("SELECT * FROM dividas", conexao)
     conexao.close()
@@ -49,7 +52,7 @@ except Exception:
         columns=["id", "credor", "valor_total", "juros_mensal", "status"]
     )
 
-# Tratamento numérico rigoroso para aportes globalmente (evita erros de escopo)
+# Tratamento numérico rigoroso para aportes globalmente
 if not df_aportes.empty and "valor" in df_aportes.columns:
     df_aportes["valor"] = pd.to_numeric(df_aportes["valor"], errors="coerce").fillna(0.0)
     total_aportes = df_aportes["valor"].sum()
@@ -92,7 +95,7 @@ if menu == "📊 Painel & Gráficos":
         else 0.0
     )
 
-    # Saldo Atual: Entradas menos Gastos Comuns menos Aportes
+    # Saldo Atual: Entradas menos Gastos Comuns menos Aportes (dinheiro investido sai da conta corrente)
     saldo = total_receitas - total_gastos - total_aportes
 
     st.subheader("Resumo do Mês e Visualização Gráfica")
