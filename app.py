@@ -18,7 +18,7 @@ df_lancamentos = pd.DataFrame(columns=["id", "data", "tipo", "categoria", "descr
 df_aportes = pd.DataFrame(columns=["id", "data", "local_aplicacao", "descricao", "valor"])
 df_dividas = pd.DataFrame(columns=["id", "credor", "valor_total", "juros_mensal", "status"])
 
-# Carregamento isolado e seguro de cada tabela do PostgreSQL
+# Carregamento isolado e seguro de cada tabela do PostgreSQL com Rollback preventivo
 try:
     conexao = obter_conexao()
     
@@ -26,9 +26,9 @@ try:
     try:
         df_lancamentos = pd.read_sql_query("SELECT * FROM lancamentos", conexao)
     except Exception:
-        pass
+        conexao.rollback()
 
-    # 2. Carregar Aportes (Testando variações comuns de nome de tabela)
+    # 2. Carregar Aportes (Testando variações de nome com recuperação de transação)
     for tabela in ["aportes", "aporte", "investimentos", "investimento", "reserva", "reservas"]:
         try:
             df_temp = pd.read_sql_query(f"SELECT * FROM {tabela}", conexao)
@@ -36,13 +36,14 @@ try:
                 df_aportes = df_temp
                 break
         except Exception:
+            conexao.rollback()  # Vital no PostgreSQL/psycopg2 para limpar o erro da transação
             continue
 
     # 3. Carregar Dívidas
     try:
         df_dividas = pd.read_sql_query("SELECT * FROM dividas", conexao)
     except Exception:
-        pass
+        conexao.rollback()
 
     conexao.close()
 except Exception as e:
@@ -65,7 +66,9 @@ st.write("Aplicativo unificado de controle de créditos, débitos e investimento
 
 # Tratamento flexível para capturar receitas e despesas
 if not df_lancamentos.empty and "valor" in df_lancamentos.columns:
-    df_lancamentos["valor"] = pd.to_numeric(df_lancamentos["valor"], errors="coerce").fillna(0.0)
+    df_lancamentos["valor"] = pd.to_numeric(
+        df_lancamentos["valor"], errors="coerce"
+    ).fillna(0.0)
     df_lancamentos["tipo_clean"] = df_lancamentos["tipo"].str.strip().str.lower()
 else:
     df_lancamentos["tipo_clean"] = ""
@@ -92,7 +95,12 @@ col3.metric("Total em Aportes", fmt_moeda(total_aportes))
 if saldo >= 0:
     col4.metric("Saldo Atual", fmt_moeda(saldo), delta="No Azul 💙")
 else:
-    col4.metric("Saldo Atual", fmt_moeda(saldo), delta="No Vermelho 🔴", delta_color="inverse")
+    col4.metric(
+        "Saldo Atual",
+        fmt_moeda(saldo),
+        delta="No Vermelho 🔴",
+        delta_color="inverse",
+    )
 
 st.divider()
 
@@ -100,17 +108,22 @@ st.subheader("Distribuição de Gastos e Investimentos (Visão Consolidada)")
 
 df_gastos_grafico = (
     df_lancamentos[df_lancamentos["tipo_clean"].isin(["despesa", "débito", "debito", "saida"])].copy()
-    if not df_lancamentos.empty else pd.DataFrame()
+    if not df_lancamentos.empty
+    else pd.DataFrame()
 )
 
 if not df_aportes.empty:
     df_ap_graf = pd.DataFrame()
     df_ap_graf["categoria"] = ["Investimentos"] * len(df_aportes)
     df_ap_graf["valor"] = df_aportes["valor"]
-    df_gastos_grafico = pd.concat([df_gastos_grafico, df_ap_graf], ignore_index=True)
+    df_gastos_grafico = pd.concat(
+        [df_gastos_grafico, df_ap_graf], ignore_index=True
+    )
 
 if not df_gastos_grafico.empty and "valor" in df_gastos_grafico.columns:
-    df_cat = df_gastos_grafico.groupby("categoria")["valor"].sum().reset_index()
+    df_cat = (
+        df_gastos_grafico.groupby("categoria")["valor"].sum().reset_index()
+    )
 
     col_g1, col_g2 = st.columns(2)
 
@@ -136,7 +149,9 @@ if not df_gastos_grafico.empty and "valor" in df_gastos_grafico.columns:
             color="categoria",
             labels={"categoria": "Categoria", "valor": "Valor (R$)"},
         )
-        fig_barras.update_traces(texttemplate="R$ %{text:.2f}", textposition="outside")
+        fig_barras.update_traces(
+            texttemplate="R$ %{text:.2f}", textposition="outside"
+        )
         fig_barras.update_layout(showlegend=False, xaxis_tickangle=-45)
         st.plotly_chart(fig_barras, use_container_width=True)
 else:
