@@ -1,17 +1,6 @@
 import pandas as pd
 import psycopg2
 import streamlit as st
-import os
-import sys
-
-# Adiciona a pasta raiz ao caminho do Python para conseguir importar o database.py
-sys.path.append(
-    os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-)
-from database import inicializar_banco, obter_conexao
-
-# Garante que as tabelas estão prontas e abre a conexão correta
-inicializar_banco()
 
 st.set_page_config(
     page_title="Diagnóstico & Reserva", page_icon="🎯", layout="wide"
@@ -24,8 +13,7 @@ st.markdown(
     " construir sua reserva de segurança."
 )
 
-
-# Função flexível para buscar a URL do banco no secrets.toml
+# Função flexível para buscar a URL do banco e carregar os dados (incluindo aportes)
 def carregar_dados():
   try:
     db_url = None
@@ -49,25 +37,31 @@ def carregar_dados():
           "⚠️ A chave de conexão com o banco não foi encontrada no arquivo"
           " `.streamlit/secrets.toml`."
       )
-      return pd.DataFrame(), pd.DataFrame()
+      return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
     conn = psycopg2.connect(db_url)
     df_lancamentos = pd.read_sql("SELECT * FROM lancamentos;", con=conn)
     df_dividas = pd.read_sql("SELECT * FROM dividas;", con=conn)
+    
+    # Carregando também os aportes para descontar corretamente no saldo atual
+    try:
+      df_aportes = pd.read_sql("SELECT * FROM desafio_aportes;", con=conn)
+    except Exception:
+      df_aportes = pd.DataFrame()
+
     conn.close()
-    return df_lancamentos, df_dividas
+    return df_lancamentos, df_dividas, df_aportes
   except Exception as e:
     st.error(f"Erro ao conectar com o banco de dados na nuvem: {e}")
-    return pd.DataFrame(), pd.DataFrame()
-
+    return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
 # Carregando os dados
-df_lancamentos, df_dividas = carregar_dados()
+df_lancamentos, df_dividas, df_aportes = carregar_dados()
 
 if df_lancamentos.empty:
   st.info("Nenhum lançamento encontrado para gerar o diagnóstico no momento.")
 else:
-  # Tratamento de dados
+  # Tratamento de dados de lançamentos
   df_lancamentos["valor"] = pd.to_numeric(
       df_lancamentos["valor"], errors="coerce"
   ).fillna(0.0)
@@ -78,7 +72,14 @@ else:
   despesas_total = df_lancamentos[
       df_lancamentos["tipo"].str.lower() == "despesa"
   ]["valor"].sum()
-  saldo_atual = receitas_total - despesas_total
+
+  # Tratamento de aportes para abater no saldo atual
+  total_aportes = 0.0
+  if not df_aportes.empty and "valor" in df_aportes.columns:
+    total_aportes = pd.to_numeric(df_aportes["valor"], errors="coerce").fillna(0.0).sum()
+
+  # Saldo atual corrigido descontando as despesas e os aportes realizados
+  saldo_atual = receitas_total - despesas_total - total_aportes
 
   # Métricas Gerais Atuais
   st.subheader("📊 Panorama Atual (Com Aluguel)")
@@ -134,7 +135,7 @@ else:
     economia_aluguel = aluguel_atual if entregar_aluguel else 0.0
 
     nova_despesa_total = despesas_total - economia_aluguel
-    novo_saldo_mensal = receitas_total - nova_despesa_total
+    novo_saldo_mensal = receitas_total - nova_despesa_total - total_aportes
     meta_reserva_futura = (
         nova_despesa_total / 30
     ) * 180  # Meta de 6 meses das novas despesas
