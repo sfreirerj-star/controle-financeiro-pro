@@ -1,4 +1,4 @@
-ffrom datetime import datetime
+from datetime import datetime
 import pandas as pd
 import plotly.express as px
 import psycopg2
@@ -30,7 +30,7 @@ try:
     conexao = obter_conexao()
     df_lancamentos = pd.read_sql_query("SELECT * FROM lancamentos", conexao)
     
-    # Tenta carregar aportes com fallback para nomes alternativos de tabela
+    # Tenta carregar aportes com fallback para nomes alternativos
     try:
         df_aportes = pd.read_sql_query("SELECT * FROM aportes", conexao)
     except Exception:
@@ -95,7 +95,7 @@ if menu == "📊 Painel & Gráficos":
         else 0.0
     )
 
-    # Saldo Atual: Entradas menos Gastos Comuns menos Aportes (dinheiro investido sai da conta corrente)
+    # Saldo Atual da Conta Corrente: Entradas menos Gastos Comuns menos Aportes Realizados
     saldo = total_receitas - total_gastos - total_aportes
 
     st.subheader("Resumo do Mês e Visualização Gráfica")
