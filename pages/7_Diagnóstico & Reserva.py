@@ -43,7 +43,6 @@ def carregar_dados():
     df_lancamentos = pd.read_sql("SELECT * FROM lancamentos;", con=conn)
     df_dividas = pd.read_sql("SELECT * FROM dividas;", con=conn)
     
-    # Carregando também os aportes para descontar corretamente no saldo atual
     try:
       df_aportes = pd.read_sql("SELECT * FROM desafio_aportes;", con=conn)
     except Exception:
@@ -73,7 +72,7 @@ else:
       df_lancamentos["tipo"].str.lower() == "despesa"
   ]["valor"].sum()
 
-  # Tratamento de aportes para abater no saldo atual
+  # Tratamento de aportes para a reserva de segurança atual
   total_aportes = 0.0
   if not df_aportes.empty and "valor" in df_aportes.columns:
     total_aportes = pd.to_numeric(df_aportes["valor"], errors="coerce").fillna(0.0).sum()
@@ -81,12 +80,13 @@ else:
   # Saldo atual corrigido descontando as despesas e os aportes realizados
   saldo_atual = receitas_total - despesas_total - total_aportes
 
-  # Métricas Gerais Atuais
+  # Métricas Gerais Atuais com 4 colunas (incluindo Reserva de Segurança Atual)
   st.subheader("📊 Panorama Atual (Com Aluguel)")
-  col1, col2, col3 = st.columns(3)
+  col1, col2, col3, col4 = st.columns(4)
   col1.metric("Receita Atual", f"R$ {receitas_total:,.2f}")
   col2.metric("Despesa Atual", f"R$ {despesas_total:,.2f}")
-  col3.metric(
+  col3.metric("Reserva Atual (Aportes)", f"R$ {total_aportes:,.2f}", delta="Acumulado 💰")
+  col4.metric(
       "Resultado Líquido Atual",
       f"R$ {saldo_atual:,.2f}",
       delta=(
@@ -108,7 +108,6 @@ else:
       " o aluguel) e a injeção do extra do PROEIS na formação da sua reserva."
   )
 
-  # Identifica o valor exato do aluguel atual no banco para abater na simulação
   df_despesas = df_lancamentos[df_lancamentos["tipo"].str.lower() == "despesa"]
   aluguel_atual = 0.0
   if not df_despesas.empty:
@@ -160,9 +159,8 @@ else:
           f" segurança!"
       )
 
-  # Validação estrita substituindo o st.info por markdown limpo para manter a fonte padrão
   if novo_saldo_mensal > 1.0:
-    quanto_falta = max(0.0, meta_reserva_futura - valor_proeis)
+    quanto_falta = max(0.0, meta_reserva_futura - valor_proeis - total_aportes)
     meses_reserva = quanto_falta / novo_saldo_mensal
 
     st.markdown(
