@@ -25,19 +25,21 @@ menu = st.sidebar.selectbox(
     ],
 )
 
-# Carregar dados do PostgreSQL para DataFrames do Pandas de forma robusta
+# Carregar dados do PostgreSQL de forma resiliente
 try:
     conexao = obter_conexao()
     df_lancamentos = pd.read_sql_query("SELECT * FROM lancamentos", conexao)
     
-    # Tenta carregar aportes com fallback para nomes alternativos
-    try:
-        df_aportes = pd.read_sql_query("SELECT * FROM aportes", conexao)
-    except Exception:
+    # Busca inteligente de tabela de aportes/investimentos
+    df_aportes = pd.DataFrame(columns=["id", "data", "local_aplicacao", "descricao", "valor"])
+    for tabela in ["aportes", "aporte", "investimentos", "investimento", "reserva", "reservas"]:
         try:
-            df_aportes = pd.read_sql_query("SELECT * FROM investimentos", conexao)
+            df_temp = pd.read_sql_query(f"SELECT * FROM {tabela}", conexao)
+            if not df_temp.empty:
+                df_aportes = df_temp
+                break
         except Exception:
-            df_aportes = pd.DataFrame(columns=["id", "data", "local_aplicacao", "descricao", "valor"])
+            continue
 
     df_dividas = pd.read_sql_query("SELECT * FROM dividas", conexao)
     conexao.close()
@@ -52,9 +54,10 @@ except Exception:
         columns=["id", "credor", "valor_total", "juros_mensal", "status"]
     )
 
-# Tratamento numérico rigoroso para aportes globalmente
-if not df_aportes.empty and "valor" in df_aportes.columns:
-    df_aportes["valor"] = pd.to_numeric(df_aportes["valor"], errors="coerce").fillna(0.0)
+# Normalização segura da coluna de valor dos aportes
+col_valor_ap = next((c for c in ["valor", "val", "montante", "quantia"] if c in df_aportes.columns), None)
+if not df_aportes.empty and col_valor_ap:
+    df_aportes["valor"] = pd.to_numeric(df_aportes[col_valor_ap], errors="coerce").fillna(0.0)
     total_aportes = df_aportes["valor"].sum()
 else:
     total_aportes = 0.0
