@@ -35,17 +35,19 @@ garantir_tabelas()
 st.subheader("📝 Novo Lançamento & Registo de Caixa")
 st.write("Registe as suas receitas e despesas do dia a dia com abatimento automático dos aportes de investimentos.")
 
-# Formulário de Novo Lançamento
+# Formulário de Novo Lançamento ajustado em 5 colunas na ordem correta
 with st.form("form_novo_lancamento", clear_on_submit=True):
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4, col5 = st.columns(5)
     with col1:
         data_lancamento = st.text_input("Data do Lançamento (DD/MM/AAAA)", value=datetime.now().strftime("%d/%m/%Y"))
-        tipo = st.selectbox("Tipo", ["Despesa", "Receita"])
     with col2:
-        categoria = st.text_input("Categoria", value="Alimentação")
-        valor = st.number_input("Valor (R$)", min_value=0.01, value=50.0, step=10.0, format="%.2f")
+        tipo = st.selectbox("Tipo", ["Despesa", "Receita"])
     with col3:
-        descricao = st.text_input("Descrição / Estabelecimento")
+        categoria = st.text_input("Categoria", placeholder="Ex: Alimentação, Transporte...")
+    with col4:
+        descricao = st.text_input("Descrição / Estabelecimento", placeholder="Ex: Supermercado")
+    with col5:
+        valor = st.number_input("Valor (R$)", min_value=0.0, value=0.0, step=10.0, format="%.2f")
         
     submitted = st.form_submit_button("Salvar Lançamento")
     if submitted:
