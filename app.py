@@ -3,8 +3,8 @@ import pandas as pd
 import psycopg2
 import streamlit as st
 
-st.set_page_config(page_title="Controle Financeiro - Marcelo", page_icon="👨‍💼", layout="wide")
-st.title("💰 Controle Financeiro — Painel do Marcelo")
+st.set_page_config(
+    page_title="Controle Financeiro - Marcelo", page_icon="👨‍💼", layout="wide"
 )
 
 def obter_conexao():
@@ -32,10 +32,11 @@ def garantir_tabelas():
 
 garantir_tabelas()
 
+st.title("💰 Controle Financeiro — Painel do Marcelo")
 st.subheader("📝 Novo Lançamento & Registo de Caixa")
 st.write("Registe as suas receitas e despesas do dia a dia com abatimento automático dos aportes de investimentos.")
 
-# Formulário organizado nas 3 colunas originais, com os campos limpos e rotulados corretamente
+# Formulário organizado nas 3 colunas, com os campos limpos, rotulados e valor zerado
 with st.form("form_novo_lancamento", clear_on_submit=True):
     col1, col2, col3 = st.columns(3)
     
