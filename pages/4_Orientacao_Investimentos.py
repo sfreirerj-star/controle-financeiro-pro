@@ -13,11 +13,12 @@ from database import inicializar_banco, obter_conexao
 # Garante que as tabelas estão prontas e abre a conexão correta
 inicializar_banco()
 
-st.set_page_config(page_title="Consultoria e Saúde Financeira", page_icon="💡", layout="wide")
+st.set_page_config(page_title="Consultoria e Saúde Financeira - Painel do Marcelo", page_icon="💡", layout="wide")
 
 def obter_conexao():
   return psycopg2.connect(st.secrets["DATABASE_URL"])
-
+    
+st.title("💰 Controle Financeiro — Painel do Marcelo")
 st.subheader("💡 Consultoria Inteligente de Bolso - Diagnóstico Financeiro")
 st.write("Análise automática da sua saúde financeira com base nos seus ganhos, compromissos mensais e dívidas ativas.")
 
