@@ -1,150 +1,141 @@
 from datetime import datetime
 import pandas as pd
-import plotly.express as px
 import psycopg2
 import streamlit as st
 
-# Configuração da Página
 st.set_page_config(
-    page_title="Controle Financeiro - Sair do Vermelho", page_icon="💰", layout="wide"
+    page_title="Central de Lançamentos & Orçamento", page_icon="📝", layout="wide"
 )
 
 def obter_conexao():
-    """Retorna a conexão com a base de dados PostgreSQL centralizada nos secrets."""
     return psycopg2.connect(st.secrets["DATABASE_URL"])
 
-# Inicialização segura dos DataFrames
+def garantir_tabelas():
+    try:
+        conexao = obter_conexao()
+        cursor = conexao.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS lancamentos (
+                id SERIAL PRIMARY KEY,
+                data TEXT NOT NULL,
+                tipo TEXT NOT NULL,
+                categoria TEXT NOT NULL,
+                descricao TEXT NOT NULL,
+                valor NUMERIC(10,2) NOT NULL
+            )
+        """)
+        conexao.commit()
+        cursor.close()
+        conexao.close()
+    except Exception:
+        pass
+
+garantir_tabelas()
+
+st.subheader("📝 Novo Lançamento & Registo de Caixa")
+st.write("Registe as suas receitas e despesas do dia a dia com abatimento automático dos aportes de investimentos.")
+
+# Formulário de Novo Lançamento ajustado rigorosamente em 5 colunas na ordem correta
+with st.form("form_novo_lancamento", clear_on_submit=True):
+    col1, col2, col3, col4, col5 = st.columns(5)
+    with col1:
+        data_lancamento = st.text_input("Data do Lançamento (DD/MM/AAAA)", value=datetime.now().strftime("%d/%m/%Y"))
+    with col2:
+        tipo = st.selectbox("Tipo", ["Despesa", "Receita"])
+    with col3:
+        categoria = st.text_input("Categoria", placeholder="Ex: Alimentação, Transporte...")
+    with col4:
+        descricao = st.text_input("Descrição / Estabelecimento", placeholder="Ex: Supermercado")
+    with col5:
+        valor = st.number_input("Valor (R$)", min_value=0.0, value=0.0, step=10.0, format="%.2f")
+        
+    submitted = st.form_submit_button("Salvar Lançamento")
+    if submitted:
+        try:
+            datetime.strptime(data_lancamento.strip(), "%d/%m/%Y")
+            conexao = obter_conexao()
+            cursor = conexao.cursor()
+            cursor.execute(
+                "INSERT INTO lancamentos (data, tipo, categoria, descricao, valor) VALUES (%s, %s, %s, %s, %s)",
+                (data_lancamento.strip(), tipo, categoria, descricao, valor)
+            )
+            conexao.commit()
+            cursor.close()
+            conexao.close()
+            st.success("Lançamento guardado com sucesso!")
+            st.rerun()
+        except ValueError:
+            st.error("Data inválida. Utilize o formato DD/MM/AAAA.")
+        except Exception as e:
+            st.error(f"Erro ao salvar: {e}")
+
+st.divider()
+
+# Carregamento robusto dos dados (Lançamentos e Aportes)
 df_lancamentos = pd.DataFrame(columns=["id", "data", "tipo", "categoria", "descricao", "valor"])
 df_aportes = pd.DataFrame(columns=["id", "data", "valor", "local_aplicacao"])
-df_dividas = pd.DataFrame(columns=["id", "credor", "valor_total", "juros_mensal", "status"])
 
-# Carregamento robusto direto das tabelas oficiais do projeto
 try:
     conexao = obter_conexao()
-    
-    # 1. Carregar Lançamentos (Entradas e Gastos Comuns)
     try:
-        df_lancamentos = pd.read_sql_query("SELECT * FROM lancamentos", conexao)
+        df_lancamentos = pd.read_sql_query("SELECT * FROM lancamentos ORDER BY id DESC", conexao)
     except Exception:
         conexao.rollback()
-
-    # 2. Carregar Aportes da tabela correta do Desafio de Reserva
+        
     try:
         df_aportes = pd.read_sql_query("SELECT id, data, valor, local_aplicacao FROM desafio_aportes", conexao)
     except Exception:
         conexao.rollback()
-
-    # 3. Carregar Dívidas
-    try:
-        df_dividas = pd.read_sql_query("SELECT * FROM dividas", conexao)
-    except Exception:
-        conexao.rollback()
-
     conexao.close()
 except Exception as e:
-    st.sidebar.error(f"Erro geral de conexão com o banco: {e}")
+    st.error(f"Erro ao carregar dados do banco: {e}")
 
-# Tratamento e soma segura dos aportes
+# Tratamento e limpeza dos dados
+if not df_lancamentos.empty and "valor" in df_lancamentos.columns:
+    df_lancamentos["valor_num"] = pd.to_numeric(df_lancamentos["valor"], errors="coerce").fillna(0.0)
+    df_lancamentos["tipo_clean"] = df_lancamentos["tipo"].str.strip().str.lower()
+else:
+    df_lancamentos["tipo_clean"] = ""
+
 if not df_aportes.empty and "valor" in df_aportes.columns:
     df_aportes["valor_num"] = pd.to_numeric(df_aportes["valor"], errors="coerce").fillna(0.0)
     total_aportes = df_aportes["valor_num"].sum()
 else:
     total_aportes = 0.0
 
-def fmt_moeda(valor):
-    return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-
-# --- CORPO DA PÁGINA PRINCIPAL (PAINEL & GRÁFICOS) ---
-st.title("💰 Controle Financeiro - Sair do Vermelho")
-st.write("Aplicativo unificado de controle de créditos, débitos e investimentos.")
-
-# Tratamento flexível para capturar receitas e despesas de lançamentos
-if not df_lancamentos.empty and "valor" in df_lancamentos.columns:
-    df_lancamentos["valor"] = pd.to_numeric(df_lancamentos["valor"], errors="coerce").fillna(0.0)
-    df_lancamentos["tipo_clean"] = df_lancamentos["tipo"].str.strip().str.lower()
-else:
-    df_lancamentos["tipo_clean"] = ""
-
 total_receitas = (
-    df_lancamentos[df_lancamentos["tipo_clean"].isin(["receita", "crédito", "credito", "entrada"])]["valor"].sum()
+    df_lancamentos[df_lancamentos["tipo_clean"].isin(["receita", "crédito", "credito", "entrada"])]["valor_num"].sum()
     if not df_lancamentos.empty else 0.0
 )
 
 total_gastos = (
-    df_lancamentos[df_lancamentos["tipo_clean"].isin(["despesa", "débito", "debito", "saida"])]["valor"].sum()
+    df_lancamentos[df_lancamentos["tipo_clean"].isin(["despesa", "débito", "debito", "saida"])]["valor_num"].sum()
     if not df_lancamentos.empty else 0.0
 )
 
-# Saldo Atual da Conta Corrente: Entradas menos Gastos Comuns menos o dinheiro enviado para os Aportes
-saldo = total_receitas - total_gastos - total_aportes
+# Saldo Real Atualizado: Entradas - Gastos Comuns - Total em Aportes
+saldo_atual = total_receitas - total_gastos - total_aportes
 
-st.subheader("Resumo do Mês e Visualização Gráfica")
-col1, col2, col3, col4 = st.columns(4)
-col1.metric("Entradas", fmt_moeda(total_receitas))
-col2.metric("Gastos Comuns", fmt_moeda(total_gastos))
-col3.metric("Total em Aportes", fmt_moeda(total_aportes))
+def fmt_moeda(v):
+    return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
-if saldo >= 0:
-    col4.metric("Saldo Atual", fmt_moeda(saldo), delta="No Azul 💙")
+st.subheader("📊 Resumo Consolidado de Créditos, Débitos e Aportes")
+c1, c2, c3, c4 = st.columns(4)
+c1.metric("Total Créditos", fmt_moeda(total_receitas))
+c2.metric("Total Débitos", fmt_moeda(total_gastos))
+c3.metric("Total em Aportes", fmt_moeda(total_aportes))
+
+if saldo_atual >= 0:
+    c4.metric("Saldo Atual", fmt_moeda(saldo_atual), delta="No Azul 💙")
 else:
-    col4.metric("Saldo Atual", fmt_moeda(saldo), delta="No Vermelho 🔴", delta_color="inverse")
+    c4.metric("Saldo Atual", fmt_moeda(saldo_atual), delta="No Vermelho 🔴", delta_color="inverse")
 
 st.divider()
 
-st.subheader("Distribuição de Gastos e Investimentos (Visão Consolidada)")
-
-df_gastos_grafico = (
-    df_lancamentos[df_lancamentos["tipo_clean"].isin(["despesa", "débito", "debito", "saida"])].copy()
-    if not df_lancamentos.empty else pd.DataFrame()
-)
-
-# Integrando os aportes como fatias de investimento nos gráficos globais
-if not df_aportes.empty:
-    df_ap_graf = pd.DataFrame()
-    df_ap_graf["categoria"] = ["Investimento / Aporte"] * len(df_aportes)
-    df_ap_graf["valor"] = df_aportes["valor_num"]
-    df_gastos_grafico = pd.concat([df_gastos_grafico, df_ap_graf], ignore_index=True)
-
-if not df_gastos_grafico.empty and "valor" in df_gastos_grafico.columns:
-    df_cat = df_gastos_grafico.groupby("categoria")["valor"].sum().reset_index()
-
-    col_g1, col_g2 = st.columns(2)
-
-    with col_g1:
-        st.markdown("**Gráfico de Pizza**")
-        fig_pizza = px.pie(
-            df_cat,
-            names="categoria",
-            values="valor",
-            hole=0.4,
-            color_discrete_sequence=px.colors.qualitative.Set3,
-        )
-        fig_pizza.update_traces(textposition="inside", textinfo="percent+label")
-        st.plotly_chart(fig_pizza, use_container_width=True)
-
-    with col_g2:
-        st.markdown("**Gráfico de Barras**")
-        fig_barras = px.bar(
-            df_cat,
-            x="categoria",
-            y="valor",
-            text="valor",
-            color="categoria",
-            labels={"categoria": "Categoria", "valor": "Valor (R$)"},
-        )
-        fig_barras.update_traces(texttemplate="R$ %{text:.2f}", textposition="outside")
-        fig_barras.update_layout(showlegend=False, xaxis_tickangle=-45)
-        st.plotly_chart(fig_barras, use_container_width=True)
-else:
-    st.info("Nenhum registro encontrado para gerar gráficos.")
-
-st.divider()
-st.subheader("Histórico Geral de Lançamentos")
-if not df_lancamentos.empty and "id" in df_lancamentos.columns:
-    df_exibicao = df_lancamentos.tail(10).copy()
-    if "tipo_clean" in df_exibicao.columns:
-        df_exibicao = df_exibicao.drop(columns=["tipo_clean"])
+st.subheader("Histórico de Lançamentos")
+if not df_lancamentos.empty:
+    df_exibicao = df_lancamentos.drop(columns=["tipo_clean", "valor_num"], errors="ignore")
     df_exibicao["valor"] = df_exibicao["valor"].apply(fmt_moeda)
     st.dataframe(df_exibicao.set_index("id"), use_container_width=True)
 else:
-    st.info("Nenhum lançamento encontrado.")
+    st.info("Nenhum lançamento registado.")
