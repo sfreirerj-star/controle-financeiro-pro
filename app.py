@@ -3,8 +3,8 @@ import pandas as pd
 import psycopg2
 import streamlit as st
 
-st.set_page_config(
-    page_title="Central de Lançamentos & Orçamento", page_icon="📝", layout="wide"
+st.set_page_config(page_title="Controle Financeiro - Marcelo", page_icon="👨‍💼", layout="wide")
+st.title("💰 Controle Financeiro — Painel do Marcelo")
 )
 
 def obter_conexao():
