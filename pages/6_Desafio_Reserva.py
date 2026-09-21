@@ -15,7 +15,7 @@ from database import inicializar_banco, obter_conexao
 inicializar_banco()
 
 st.set_page_config(
-    page_title="Desafio Reserva & Simulador", page_icon="🎯", layout="wide"
+    page_title="Desafio Reserva & Simulador - Painel do Marcelo", page_icon="🎯", layout="wide"
 )
 
 
@@ -44,6 +44,7 @@ def garantir_tabelas():
 
 garantir_tabelas()
 
+st.title("💰 Controle Financeiro — Painel do Marcelo")
 st.subheader("🎯 Desafio Personalizado & Simulador de Antecipação")
 st.write(
     "Controle seus aportes mensais, diversifique suas instituições financeiras"
