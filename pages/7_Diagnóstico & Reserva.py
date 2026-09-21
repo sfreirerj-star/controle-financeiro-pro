@@ -3,9 +3,10 @@ import psycopg2
 import streamlit as st
 
 st.set_page_config(
-    page_title="Diagnóstico & Reserva", page_icon="🎯", layout="wide"
+    page_title="Diagnóstico & Reserva - Painel do Marcelo", page_icon="🎯", layout="wide"
 )
 
+st.title("💰 Controle Financeiro — Painel do Marcelo")
 st.header("🎯 Diagnóstico de Gargalos & Estratégia de Reserva")
 st.markdown(
     "Esta aba analisa os seus lançamentos, simula o impacto da transição de"
