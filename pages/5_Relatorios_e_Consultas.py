@@ -16,11 +16,12 @@ from database import inicializar_banco, obter_conexao
 # Garante que as tabelas estão prontas e abre a conexão correta
 inicializar_banco()
 
-st.set_page_config(page_title="Relatórios e Consultas", page_icon="📈", layout="wide")
+st.set_page_config(page_title="Relatórios e Consultas - Painel do Marcelo", page_icon="📈", layout="wide")
 
 def obter_conexao():
     return psycopg2.connect(st.secrets["DATABASE_URL"])
 
+st.title("💰 Controle Financeiro — Painel do Marcelo")
 st.subheader("📈 Relatórios, Consultas e Fechamento de Mês")
 st.write("Filtre seus lançamentos detalhadamente, gerencie registros, exporte relatórios, acompanhe o fechamento mês a mês e projete seu saldo futuro.")
 
