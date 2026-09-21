@@ -14,7 +14,8 @@ from database import inicializar_banco, obter_conexao
 # Garante que as tabelas estão prontas e abre a conexão correta
 inicializar_banco()
 
-st.set_page_config(page_title="Raio-X de Dívidas", page_icon="⚠️", layout="wide")
+st.title("💰 Controle Financeiro — Painel do Marcelo")
+st.set_page_config(page_title="Raio-X de Dívidas - Painel do Marcelo", page_icon="⚠️", layout="wide")
 
 def obter_conexao():
     return psycopg2.connect(st.secrets["DATABASE_URL"])
