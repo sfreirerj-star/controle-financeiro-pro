@@ -13,7 +13,8 @@ def obter_conexao():
 
 
 # Identificação correta do Painel do Marcelo
-st.subheader("✏️ Controle Financeiro — Painel do Marcelo")
+st.title("💰 Controle Financeiro — Painel do Marcelo")
+st.subheader("✏️ Gerenciar, Editar ou Excluir Lançamentos")
 st.write(
     "Gerencie, edite ou exclua seus lançamentos manuais e acompanhe seus"
     " compromissos."
