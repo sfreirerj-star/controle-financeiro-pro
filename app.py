@@ -70,36 +70,49 @@ def fmt_moeda(valor):
   )
 
 
-# --- PROCESSAMENTO DE COMPETÊNCIAS (MÊS/ANO) ---
-def extrair_mes_ano(data_str):
-  """Extrai o formato AAAA-MM de uma string de data (DD/MM/AAAA ou similar)."""
+# --- PROCESSAMENTO DE COMPETÊNCIAS (MM/AAAA) ---
+def extrair_competencia(data_str):
+  """Extrai o formato MM/AAAA para exibição e AAAA-MM para ordenação correta."""
   try:
     dt = pd.to_datetime(data_str, format="%d/%m/%Y", errors="coerce")
     if pd.isna(dt):
       dt = pd.to_datetime(data_str, errors="coerce")
     if pd.notna(dt):
-      return dt.strftime("%Y-%m")
+      return dt.strftime("%m/%Y"), dt.strftime("%Y-%m")
   except Exception:
     pass
-  return "Indefinido"
+  return "Indefinido", "9999-99"
 
 
 if not df_lancamentos.empty and "data" in df_lancamentos.columns:
-  df_lancamentos["competencia"] = df_lancamentos["data"].apply(extrair_mes_ano)
+  res_lanc = df_lancamentos["data"].apply(extrair_competencia)
+  df_lancamentos["competencia"] = [x[0] for x in res_lanc]
+  df_lancamentos["comp_ordem"] = [x[1] for x in res_lanc]
 else:
   df_lancamentos["competencia"] = "Indefinido"
+  df_lancamentos["comp_ordem"] = "9999-99"
 
 if not df_aportes.empty and "data" in df_aportes.columns:
-  df_aportes["competencia"] = df_aportes["data"].apply(extrair_mes_ano)
+  res_ap = df_aportes["data"].apply(extrair_competencia)
+  df_aportes["competencia"] = [x[0] for x in res_ap]
+  df_aportes["comp_ordem"] = [x[1] for x in res_ap]
 else:
   df_aportes["competencia"] = "Indefinido"
+  df_aportes["comp_ordem"] = "9999-99"
 
-# Obter lista de competências disponíveis ordenadas
-competencias_disponiveis = sorted(
-    [c for c in df_lancamentos["competencia"].unique() if c != "Indefinido"],
-    reverse=True,
+# Obter lista de competências únicas ordenadas cronologicamente
+mapeamento_comps = (
+    df_lancamentos[["competencia", "comp_ordem"]]
+    .append(df_aportes[["competencia", "comp_ordem"]])
+    .drop_duplicates()
 )
-mes_atual_sistema = datetime.now().strftime("%Y-%m")
+mapeamento_comps = mapeamento_comps[
+    mapeamento_comps["competencia"] != "Indefinido"
+].sort_values("comp_ordem", ascending=False)
+
+competencias_disponiveis = mapeamento_comps["competencia"].tolist()
+mes_atual_sistema = datetime.now().strftime("%m/%Y")
+
 if not competencias_disponiveis:
   competencias_disponiveis = [mes_atual_sistema]
 
@@ -111,6 +124,15 @@ competencia_selecionada = st.sidebar.selectbox(
     index=0
     if mes_atual_sistema in competencias_disponiveis
     else len(competencias_disponiveis) - 1,
+)
+
+# Descobrir a ordem correspondente para filtros internos
+ordem_selecionada = (
+    mapeamento_comps[
+        mapeamento_comps["competencia"] == competencia_selecionada
+    ]["comp_ordem"].values[0]
+    if competencia_selecionada in mapeamento_comps["competencia"].values
+    else datetime.now().strftime("%Y-%m")
 )
 
 # --- CORPO DA PÁGINA PRINCIPAL (PAINEL & GRÁFICOS) ---
@@ -170,17 +192,26 @@ total_aportes_mes = (
 
 
 # --- CÁLCULO INTELIGENTE DE SALDO REMANESCENTE ACUMULADO ---
-def calcular_saldo_ate_competencia(df_lan, df_ap, comp_alvo):
+def calcular_saldo_ate_competencia(df_lan, df_ap, ordem_alvo):
   """Calcula o saldo acumulado de todas as competências anteriores à selecionada."""
   try:
-    comps = sorted(
-        [c for c in df_lan["competencia"].unique() if c != "Indefinido"]
+    todas_ordens = sorted(
+        list(
+            set(
+                df_lan[df_lan["comp_ordem"] != "9999-99"][
+                    "comp_ordem"
+                ].unique().tolist()
+                + df_ap[df_ap["comp_ordem"] != "9999-99"][
+                    "comp_ordem"
+                ].unique().tolist()
+            )
+        )
     )
     saldo_acumulado = 0.0
-    for c in comps:
-      if c < comp_alvo:
+    for ord_comp in todas_ordens:
+      if ord_comp < ordem_alvo:
         rec = df_lan[
-            (df_lan["competencia"] == c)
+            (df_lan["comp_ordem"] == ord_comp)
             & (
                 df_lan["tipo_clean"].isin(
                     ["receita", "crédito", "credito", "entrada"]
@@ -188,7 +219,7 @@ def calcular_saldo_ate_competencia(df_lan, df_ap, comp_alvo):
             )
         ]["valor"].sum()
         gas = df_lan[
-            (df_lan["competencia"] == c)
+            (df_lan["comp_ordem"] == ord_comp)
             & (
                 df_lan["tipo_clean"].isin(
                     ["despesa", "débito", "debito", "saida"]
@@ -196,7 +227,7 @@ def calcular_saldo_ate_competencia(df_lan, df_ap, comp_alvo):
             )
         ]["valor"].sum()
         apo = (
-            df_ap[df_ap["competencia"] == c]["valor_num"].sum()
+            df_ap[df_ap["comp_ordem"] == ord_comp]["valor_num"].sum()
             if not df_ap.empty
             else 0.0
         )
@@ -207,7 +238,7 @@ def calcular_saldo_ate_competencia(df_lan, df_ap, comp_alvo):
 
 
 saldo_remanescente_anterior = calcular_saldo_ate_competencia(
-    df_lancamentos, df_aportes, competencia_selecionada
+    df_lancamentos, df_aportes, ordem_selecionada
 )
 
 # Saldo Atual do Mês = Saldo Anterior + Receitas do Mês - Gastos do Mês - Aportes do Mês
@@ -303,10 +334,10 @@ st.subheader(
 )
 if not df_lanc_mes.empty and "id" in df_lanc_mes.columns:
   df_exibicao = df_lanc_mes.copy()
-  if "tipo_clean" in df_exibicao.columns:
-    df_exibicao = df_exibicao.drop(columns=["tipo_clean"])
-  if "competencia" in df_exibicao.columns:
-    df_exibicao = df_exibicao.drop(columns=["competencia"])
+  # Limpar colunas auxiliares se existirem
+  for col_aux in ["tipo_clean", "competencia", "comp_ordem"]:
+    if col_aux in df_exibicao.columns:
+      df_exibicao = df_exibicao.drop(columns=[col_aux])
   df_exibicao["valor"] = df_exibicao["valor"].apply(fmt_moeda)
   st.dataframe(df_exibicao.set_index("id"), use_container_width=True)
 else:
@@ -316,23 +347,32 @@ else:
 st.divider()
 st.subheader("📊 Balancete Comparativo Mensal (Evolução Contábil)")
 
-competencias_todas = sorted(
+# Obter todas as ordens de competência únicas cronologicamente
+todas_ordens = sorted(
     list(
         set(
-            [c for c in df_lancamentos["competencia"].unique() if c != "Indefinido"]
-            + [c for c in df_aportes["competencia"].unique() if c != "Indefinido"]
+            df_lancamentos[df_lancamentos["comp_ordem"] != "9999-99"][
+                "comp_ordem"
+            ].unique().tolist()
+            + df_aportes[df_aportes["comp_ordem"] != "9999-99"][
+                "comp_ordem"
+            ].unique().tolist()
         )
     )
 )
 
-if competencias_todas:
+if todas_ordens:
   dados_balancete = []
   acum_saldo_loop = 0.0
 
-  for comp in competencias_todas:
+  for ord_comp in todas_ordens:
+    # Converter 'YYYY-MM' para 'MM/YYYY' para exibição amigável
+    ano, mes = ord_comp.split("-")
+    comp_formatada = f"{mes}/{ano}"
+
     rec_c = (
         df_lancamentos[
-            (df_lancamentos["competencia"] == comp)
+            (df_lancamentos["comp_ordem"] == ord_comp)
             & (
                 df_lancamentos["tipo_clean"].isin(
                     ["receita", "crédito", "credito", "entrada"]
@@ -345,7 +385,7 @@ if competencias_todas:
 
     gas_c = (
         df_lancamentos[
-            (df_lancamentos["competencia"] == comp)
+            (df_lancamentos["comp_ordem"] == ord_comp)
             & (
                 df_lancamentos["tipo_clean"].isin(
                     ["despesa", "débito", "debito", "saida"]
@@ -357,7 +397,7 @@ if competencias_todas:
     )
 
     apo_c = (
-        df_aportes[df_aportes["competencia"] == comp]["valor_num"].sum()
+        df_aportes[df_aportes["comp_ordem"] == ord_comp]["valor_num"].sum()
         if not df_aportes.empty
         else 0.0
     )
@@ -365,19 +405,20 @@ if competencias_todas:
     saldo_final_c = acum_saldo_loop + rec_c - gas_c - apo_c
 
     dados_balancete.append({
-        "Competência": comp,
+        "Competência": comp_formatada,
         "Saldo Anterior": acum_saldo_loop,
         "Entradas": rec_c,
         "Gastos Comuns": gas_c,
         "Aportes": apo_c,
         "Saldo Final": saldo_final_c,
+        "_ordem": ord_comp,  # Auxiliar para ordenação interna
     })
     acum_saldo_loop = saldo_final_c
 
   df_resumo_mensal = pd.DataFrame(dados_balancete)
 
   # Formatar colunas para exibição em moeda
-  df_resumo_formatado = df_resumo_mensal.copy()
+  df_resumo_formatado = df_resumo_mensal.drop(columns=["_ordem"]).copy()
   for col in [
       "Saldo Anterior",
       "Entradas",
