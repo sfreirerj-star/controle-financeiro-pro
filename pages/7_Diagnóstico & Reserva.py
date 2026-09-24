@@ -1,9 +1,14 @@
+from datetime import datetime
+import os
+import sys
 import pandas as pd
 import psycopg2
 import streamlit as st
 
 st.set_page_config(
-    page_title="Diagnóstico & Reserva - Painel do Marcelo", page_icon="🎯", layout="wide"
+    page_title="Diagnóstico & Reserva - Painel do Marcelo",
+    page_icon="🎯",
+    layout="wide",
 )
 
 st.title("💰 Controle Financeiro — Painel do Marcelo")
@@ -11,8 +16,9 @@ st.header("🎯 Diagnóstico de Gargalos & Estratégia de Reserva")
 st.markdown(
     "Esta aba analisa os seus lançamentos, simula o impacto da transição de"
     " moradia em dezembro, a entrada do extra do PROEIS e traça a rota para"
-    " construir sua reserva de segurança."
+    " construir sua reserva de segurança de forma cumulativa."
 )
+
 
 # Função flexível para buscar a URL do banco e carregar os dados (incluindo aportes)
 def carregar_dados():
@@ -22,10 +28,7 @@ def carregar_dados():
       db_url = st.secrets["DATABASE_URL"]
     elif "database_url" in st.secrets:
       db_url = st.secrets["database_url"]
-    elif (
-        "connections" in st.secrets
-        and "postgresql" in st.secrets["connections"]
-    ):
+    elif "connections" in st.secrets and "postgresql" in st.secrets["connections"]:
       db_url = st.secrets["connections"]["postgresql"]["url"]
     else:
       for key in st.secrets:
@@ -43,7 +46,7 @@ def carregar_dados():
     conn = psycopg2.connect(db_url)
     df_lancamentos = pd.read_sql("SELECT * FROM lancamentos;", con=conn)
     df_dividas = pd.read_sql("SELECT * FROM dividas;", con=conn)
-    
+
     try:
       df_aportes = pd.read_sql("SELECT * FROM desafio_aportes;", con=conn)
     except Exception:
@@ -54,6 +57,7 @@ def carregar_dados():
   except Exception as e:
     st.error(f"Erro ao conectar com o banco de dados na nuvem: {e}")
     return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+
 
 # Carregando os dados
 df_lancamentos, df_dividas, df_aportes = carregar_dados()
@@ -73,10 +77,21 @@ else:
       df_lancamentos["tipo"].str.lower() == "despesa"
   ]["valor"].sum()
 
-  # Tratamento de aportes para a reserva de segurança atual
+  # Tratamento de aportes para a reserva de segurança atual (acumulado real)
   total_aportes = 0.0
-  if not df_aportes.empty and "valor" in df_aportes.columns:
-    total_aportes = pd.to_numeric(df_aportes["valor"], errors="coerce").fillna(0.0).sum()
+  if not df_aportes.empty:
+    if "valor" in df_aportes.columns:
+      total_aportes = (
+          pd.to_numeric(df_aportes["valor"], errors="coerce")
+          .fillna(0.0)
+          .sum()
+      )
+    elif "valor_num" in df_aportes.columns:
+      total_aportes = (
+          pd.to_numeric(df_aportes["valor_num"], errors="coerce")
+          .fillna(0.0)
+          .sum()
+      )
 
   # Saldo atual corrigido descontando as despesas e os aportes realizados
   saldo_atual = receitas_total - despesas_total - total_aportes
@@ -86,7 +101,11 @@ else:
   col1, col2, col3, col4 = st.columns(4)
   col1.metric("Receita Atual", f"R$ {receitas_total:,.2f}")
   col2.metric("Despesa Atual", f"R$ {despesas_total:,.2f}")
-  col3.metric("Reserva Atual (Aportes)", f"R$ {total_aportes:,.2f}", delta="Acumulado 💰")
+  col3.metric(
+      "Reserva Atual (Aportes)",
+      f"R$ {total_aportes:,.2f}",
+      delta="Acumulado Cumulativo 💰",
+  )
   col4.metric(
       "Resultado Líquido Atual",
       f"R$ {saldo_atual:,.2f}",
@@ -135,7 +154,7 @@ else:
     economia_aluguel = aluguel_atual if entregar_aluguel else 0.0
 
     nova_despesa_total = despesas_total - economia_aluguel
-    novo_saldo_mensal = receitas_total - nova_despesa_total - total_aportes
+    novo_saldo_mensal = receitas_total - nova_despesa_total
     meta_reserva_futura = (
         nova_despesa_total / 30
     ) * 180  # Meta de 6 meses das novas despesas
@@ -211,7 +230,7 @@ else:
   # Plano de Ação Estratégico
   st.subheader("🛡️ Plano Diretor de Transição Patrimonial")
   st.markdown(f"""
-    1. **Foco na Data de Dezembro:** Mantenha a disciplina financeira atual até completar o prazo contratual do Quinto Andar. A própria inércia do contrato resolve o problema estrutural do aluguel sem multas rescisórias abusivas.
+    1. **Foco na Data de Dezembro:** Mantenha a disciplina financeira atual até completar o prazo contratual. A própria inércia do contrato resolve o problema estrutural do aluguel sem multas rescisórias abusivas.
     2. **Blindagem do PROEIS (R$ {valor_proeis:,.2f}):** Quando esse valor for creditado, **não o misture com a conta corrente comum**. Destine-o imediatamente para uma aplicação de renda fixa com liquidez diária (criando a fundação da sua reserva).
     3. **Aproveitamento do Imóvel Próprio:** A mudança para o seu apartamento em dezembro converterá um custo perdido (aluguel a terceiros) em permanência no seu próprio patrimônio, reduzindo drasticamente o escoamento de caixa.
     """)
