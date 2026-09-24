@@ -100,7 +100,7 @@ else:
   df_aportes["competencia"] = "Indefinido"
   df_aportes["comp_ordem"] = "9999-99"
 
-# Obter lista de competências únicas ordenadas cronologicamente (Usando pd.concat correto)
+# Obter lista de competências únicas ordenadas cronologicamente
 mapeamento_comps = pd.concat([
     df_lancamentos[["competencia", "comp_ordem"]],
     df_aportes[["competencia", "comp_ordem"]],
@@ -328,26 +328,69 @@ if not df_gastos_grafico.empty and "valor" in df_gastos_grafico.columns:
 else:
   st.info("Nenhum registro encontrado para gerar gráficos nesta competência.")
 
+# --- SEÇÃO DE LANÇAMENTOS SEPARADOS (CRÉDITOS E DÉBITOS) ---
 st.divider()
-st.subheader(
-    f"Histórico de Lançamentos da Competência: {competencia_selecionada}"
+st.subheader(f"📥 Créditos (Entradas) da Competência: {competencia_selecionada}")
+
+df_creditos_mes = (
+    df_lanc_mes[
+        df_lanc_mes["tipo_clean"].isin(
+            ["receita", "crédito", "credito", "entrada"]
+        )
+    ].copy()
+    if not df_lanc_mes.empty
+    else pd.DataFrame()
 )
-if not df_lanc_mes.empty and "id" in df_lanc_mes.columns:
-  df_exibicao = df_lanc_mes.copy()
-  # Limpar colunas auxiliares se existirem
-  for col_aux in ["tipo_clean", "competencia", "comp_ordem"]:
-    if col_aux in df_exibicao.columns:
-      df_exibicao = df_exibicao.drop(columns=[col_aux])
-  df_exibicao["valor"] = df_exibicao["valor"].apply(fmt_moeda)
-  st.dataframe(df_exibicao.set_index("id"), use_container_width=True)
+
+if not df_creditos_mes.empty and "id" in df_creditos_mes.columns:
+  # Remover colunas desnecessárias ou de controle
+  for col_aux in [
+      "tipo",
+      "tipo_clean",
+      "competencia",
+      "comp_ordem",
+      "local_aplicacao",
+      "is_aporte",
+  ]:
+    if col_aux in df_creditos_mes.columns:
+      df_creditos_mes = df_creditos_mes.drop(columns=[col_aux])
+  df_creditos_mes["valor"] = df_creditos_mes["valor"].apply(fmt_moeda)
+  st.dataframe(df_creditos_mes.set_index("id"), use_container_width=True)
 else:
-  st.info("Nenhum lançamento encontrado para esta competência.")
+  st.info("Nenhum crédito registrado nesta competência.")
+
+st.subheader(f"📤 Débitos (Despesas) da Competência: {competencia_selecionada}")
+
+df_debitos_mes = (
+    df_lanc_mes[
+        df_lanc_mes["tipo_clean"].isin(["despesa", "débito", "debito", "saida"])
+    ].copy()
+    if not df_lanc_mes.empty
+    else pd.DataFrame()
+)
+
+if not df_debitos_mes.empty and "id" in df_debitos_mes.columns:
+  # Remover colunas desnecessárias ou de controle
+  for col_aux in [
+      "tipo",
+      "tipo_clean",
+      "competencia",
+      "comp_ordem",
+      "local_aplicacao",
+      "is_aporte",
+  ]:
+    if col_aux in df_debitos_mes.columns:
+      df_debitos_mes = df_debitos_mes.drop(columns=[col_aux])
+  df_debitos_mes["valor"] = df_debitos_mes["valor"].apply(fmt_moeda)
+  st.dataframe(df_debitos_mes.set_index("id"), use_container_width=True)
+else:
+  st.info("Nenhum débito registrado nesta competência.")
+
 
 # --- SEÇÃO DE BALANCETE COMPARATIVO MÊS A MÊS ---
 st.divider()
 st.subheader("📊 Balancete Comparativo Mensal (Evolução Contábil)")
 
-# Obter todas as ordens de competência únicas cronologicamente
 todas_ordens = sorted(
     list(
         set(
@@ -366,7 +409,6 @@ if todas_ordens:
   acum_saldo_loop = 0.0
 
   for ord_comp in todas_ordens:
-    # Converter 'YYYY-MM' para 'MM/YYYY' para exibição amigável
     ano, mes = ord_comp.split("-")
     comp_formatada = f"{mes}/{ano}"
 
@@ -411,13 +453,12 @@ if todas_ordens:
         "Gastos Comuns": gas_c,
         "Aportes": apo_c,
         "Saldo Final": saldo_final_c,
-        "_ordem": ord_comp,  # Auxiliar para ordenação interna
+        "_ordem": ord_comp,
     })
     acum_saldo_loop = saldo_final_c
 
   df_resumo_mensal = pd.DataFrame(dados_balancete)
 
-  # Formatar colunas para exibição em moeda
   df_resumo_formatado = df_resumo_mensal.drop(columns=["_ordem"]).copy()
   for col in [
       "Saldo Anterior",
