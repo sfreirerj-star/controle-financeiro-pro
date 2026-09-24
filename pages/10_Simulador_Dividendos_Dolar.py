@@ -2,26 +2,82 @@ import pandas as pd
 import streamlit as st
 
 st.set_page_config(
-    page_title="Simulador & Inteligência de Mercado - Painel do Marcelo",
+    page_title="Simulador & Melhores Ações - Painel do Marcelo",
     page_icon="📈",
     layout="wide",
 )
 
 st.title("💰 Controle Financeiro — Painel do Marcelo")
-st.header("📈 Simulador Inteligente & Inteligência do Mercado Global")
+st.header("📈 Melhores Ações Globais, Simulador DCA & Inteligência de Mercado")
 st.markdown(
-    "Esta ferramenta combina projeções de aportes mensais (DCA) com o"
-    " monitoramento das fontes de dados utilizadas pelos maiores investidores"
-    " do mundo para operar com segurança no mercado internacional."
+    "Esta ferramenta combina projeções de aportes mensais, orientações"
+    " operacionais e um painel gráfico com as melhores sugestões de ativos"
+    " defensivos e pagadores de dividendos no mercado americano."
 )
 
 st.divider()
 
 # ==========================================================
-# 1. ONDE OS GRANDES INVESTIDORES BUSCAM INFORMAÇÕES
+# 1. SUGESTÃO DE ATIVOS SEGUROS (BASEADO EM GRANDES PORTAIS)
 # ==========================================================
 st.subheader(
-    "🌍 1. Fontes Oficiais e Termômetros do Mercado Global (Smart Money)"
+    "🌟 1. Painel de Sugestão: Ativos de Referência no Mercado Americano"
+)
+st.markdown(
+    "Com base nos principais portais de investimentos do mundo (como Seeking"
+    " Alpha, Yahoo Finance e relatórios institucionais), selecionamos os ativos"
+    " mais resilientes para formação de renda passiva com segurança:"
+)
+
+# Dados consolidados dos melhores ativos globais de dividendos
+dados_melhores_acoes = [
+    {
+        "Ativo / Ticker": "Realty Income (O)",
+        "Classe": "REIT (Imobiliário)",
+        "Frequência": "Mensal",
+        "Dividend Yield (DY)": "5.3%",
+        "Perfil de Risco": "Baixo (Histórico consolidado)",
+    },
+    {
+        "Ativo / Ticker": "SCHD (Schwab ETF)",
+        "Classe": "ETF de Dividendos Qualitativos",
+        "Frequência": "Trimestral",
+        "Dividend Yield (DY)": "3.5%",
+        "Perfil de Risco": "Muito Baixo (Diversificado)",
+    },
+    {
+        "Ativo / Ticker": "VYM (Vanguard ETF)",
+        "Classe": "ETF de Alto Rendimento",
+        "Frequência": "Trimestral",
+        "Dividend Yield (DY)": "3.0%",
+        "Perfil de Risco": "Baixo (Ampla diversificação)",
+    },
+    {
+        "Ativo / Ticker": "Coca-Cola (KO)",
+        "Classe": "Ação (Dividend King)",
+        "Frequência": "Trimestral",
+        "Dividend Yield (DY)": "3.1%",
+        "Perfil de Risco": "Baixo (Resiliência em crises)",
+    },
+    {
+        "Ativo / Ticker": "Johnson & Johnson (JNJ)",
+        "Classe": "Ação (Dividend King)",
+        "Frequência": "Trimestral",
+        "Dividend Yield (DY)": "3.0%",
+        "Perfil de Risco": "Baixo (Setor de saúde defensivo)",
+    },
+]
+
+df_sugestoes = pd.DataFrame(dados_melhores_acoes)
+st.dataframe(df_sugestoes, use_container_width=True, hide_index=True)
+
+st.divider()
+
+# ==========================================================
+# 2. ONDE OS GRANDES INVESTIDORES BUSCAM INFORMAÇÕES
+# ==========================================================
+st.subheader(
+    "🌍 2. Fontes Oficiais e Termômetros do Mercado Global (Smart Money)"
 )
 st.markdown(
     "Para investir com segurança e sem especulação, os grandes gestores"
@@ -34,46 +90,48 @@ col_f1, col_f2 = st.columns(2)
 with col_f1:
   st.markdown("""
     #### 📊 Portais de Dados e Cotações Globais
-    * **[TradingView](https://br.tradingview.com/):** A principal ferramenta gráfica do mundo para monitorar o comportamento de ativos, índices (S&P 500, NASDAQ) e cotações em tempo real.
-    * **[Yahoo Finance](https://finance.yahoo.com/):** Essencial para verificar balanços trimestrais, lucros por ação (EPS) e o *Dividend Yield* histórico de empresas e ETFs.
-    * **[Seeking Alpha](https://seekingalpha.com/):** Plataforma global onde analistas e investidores publicam teses detalhadas sobre ações pagadoras de dividendos e REITs.
+    * **[TradingView](https://br.tradingview.com/):** Principal ferramenta gráfica do mundo para monitorar ativos e índices (S&P 500, NASDAQ).
+    * **[Yahoo Finance](https://finance.yahoo.com/):** Essencial para verificar balanços trimestrais e o *Dividend Yield* histórico.
+    * **[Seeking Alpha](https://seekingalpha.com/):** Plataforma global com teses detalhadas sobre ações de dividendos e REITs.
     """)
 
 with col_f2:
   st.markdown("""
     #### 🏛️ Indicadores Macroeconômicos (O que move a Bolsa)
-    * **Taxa de Juros do FED (FOMC):** O custo do dinheiro nos EUA dita o fluxo de capital. Juros em queda costumam impulsionar ações e REITs de dividendos.
-    * **Índice de Inflação (CPI e PCE):** Medem o ritmo do custo de vida americano, influenciando diretamente as decisões do Banco Central dos EUA.
-    * **Relatórios 10-K e 13-F:** Documentos oficiais na SEC (CVM americana) onde grandes investidores (como o fundo de Warren Buffett) revelam o que estão comprando ou vendendo.
+    * **Taxa de Juros do FED (FOMC):** O custo do dinheiro nos EUA dita o fluxo de capital para renda fixa e variável.
+    * **Índice de Inflação (CPI e PCE):** Medem o ritmo do custo de vida americano e direcionam as políticas do Banco Central.
+    * **Relatórios 10-K e 13-F:** Documentos oficiais na SEC onde grandes fundos revelam suas movimentações.
     """)
 
 st.divider()
 
 # ==========================================================
-# 2. SELEÇÃO DE ATIVOS E SIMULAÇÃO DE APORTES (DCA)
+# 3. SELEÇÃO DE ATIVOS E SIMULAÇÃO DE APORTES (DCA)
 # ==========================================================
-st.subheader("🎯 2. Simulador de Projeção de Renda (Estratégia DCA)")
+st.subheader("🎯 3. Simulador de Projeção de Renda (Estratégia DCA)")
 
 ativo_escolhido = st.selectbox(
-    "Selecione o Ativo de Estudo:",
+    "Selecione o Ativo para Simular:",
     [
-        "O (Realty Income - Mensal)",
-        "SCHD (ETF de Dividendos - Trimestral)",
-        "VYM (ETF High Yield - Trimestral)",
-        "KO (Coca-Cola - Trimestral)",
+        "Realty Income (O)",
+        "SCHD (Schwab ETF)",
+        "VYM (Vanguard ETF)",
+        "Coca-Cola (KO)",
+        "Johnson & Johnson (JNJ)",
     ],
 )
 
-# Dados de referência de mercado atualizados para simulação segura
-dados_ativos = {
-    "O (Realty Income - Mensal)": {"preco": 55.00, "dy": 0.053},
-    "SCHD (ETF de Dividendos - Trimestral)": {"preco": 28.50, "dy": 0.035},
-    "VYM (ETF High Yield - Trimestral)": {"preco": 125.00, "dy": 0.030},
-    "KO (Coca-Cola - Trimestral)": {"preco": 68.00, "dy": 0.031},
+# Parâmetros de referência estáveis para simulação segura
+tabela_parametros = {
+    "Realty Income (O)": {"preco": 55.00, "dy": 0.053},
+    "SCHD (Schwab ETF)": {"preco": 28.50, "dy": 0.035},
+    "VYM (Vanguard ETF)": {"preco": 125.00, "dy": 0.030},
+    "Coca-Cola (KO)": {"preco": 68.00, "dy": 0.031},
+    "Johnson & Johnson (JNJ)": {"preco": 160.00, "dy": 0.030},
 }
 
-preco_atual = dados_ativos[ativo_escolhido]["preco"]
-dividend_yield = dados_ativos[ativo_escolhido]["dy"]
+preco_atual = tabela_parametros[ativo_escolhido]["preco"]
+dividend_yield = tabela_parametros[ativo_escolhido]["dy"]
 
 st.success(
     f"🌐 Parâmetros de referência para **{ativo_escolhido}** | Cotação Média"
@@ -97,9 +155,9 @@ with col_s1:
 
 with col_s2:
   st.markdown(f"""
-    * **Valor do Aporte:** US$ {aporte_mensal_usd:,.2f} por mês[cite: 6].
-    * **Estratégia DCA:** Aportes regulares reduzem o impacto da volatilidade cambial e dos ciclos de alta e baixa da bolsa[cite: 6].
-    * **Foco:** Acumulação segura de ativos geradores de fluxo de caixa passivo[cite: 6].
+    * **Valor do Aporte:** US$ {aporte_mensal_usd:,.2f} por mês.
+    * **Estratégia DCA:** Aportes regulares reduzem o impacto da volatilidade cambial e dos ciclos de mercado.
+    * **Foco:** Acumulação disciplinada de ativos geradores de fluxo passivo.
     """)
 
 if preco_atual > 0:
@@ -124,10 +182,10 @@ if preco_atual > 0:
 st.divider()
 
 # ==========================================================
-# 3. GUIA PRÁTICO: COMO EXECUTAR A OPERAÇÃO NA CORRETORA
+# 4. GUIA PRÁTICO: COMO EXECUTAR A OPERAÇÃO NA CORRETORA
 # ==========================================================
 st.subheader(
-    "🛠️ 3. Guia Prático: Como Executar a Operação na Prática (Avenue ou Nomad)"
+    "🛠️ 4. Guia Prático: Como Executar a Operação na Prática (Avenue ou Nomad)"
 )
 st.markdown(
     "Com base nas informações globais e no seu planejamento, execute suas"
@@ -138,15 +196,15 @@ with st.expander(
     "📘 Passo 1: Transferência de Recursos e Câmbio", expanded=True
 ):
   st.markdown("""
-    1. **Envio de Reais:** Acesse o aplicativo da sua corretora (Avenue ou Nomad)[cite: 6].
-    2. **Conversão Cambial:** Faça uma TED/PIX para a conta da corretora e converta para Dólares aplicando a cotação comercial e o IOF[cite: 6].
+    1. **Envio de Reais:** Acesse o aplicativo da sua corretora (Avenue ou Nomad).
+    2. **Conversão Cambial:** Faça uma TED/PIX para a conta da corretora e converta para Dólares aplicando a cotação comercial e o IOF.
     3. **Saldo Disponível:** Confirme que o poder de compra em dólares já está liberado em sua conta internacional.
     """)
 
 with st.expander("📘 Passo 2: Localização do Ativo no Home Broker"):
   st.markdown("""
     1. **Horário de Negociação:** Abra a aba de investimentos durante o horário de funcionamento da Bolsa de Nova York (NYSE / NASDAQ).
-    2. **Busca pelo Ticker:** Digite o código oficial do ativo na barra de pesquisa (ex: **`O`** para a *Realty Income* ou **`SCHD`** para o ETF)[cite: 6].
+    2. **Busca pelo Ticker:** Digite o código oficial do ativo na barra de pesquisa (ex: **`O`** para a *Realty Income* ou **`SCHD`** para o ETF).
     3. **Análise de Conjuntura:** Confira o comportamento recente do preço antes de prosseguir.
     """)
 
@@ -164,8 +222,8 @@ with st.expander(
 ):
   st.markdown("""
     * **Custódia Vitalícia:** As cotas adquiridas ficam armazenadas de forma segura na sua conta internacional.
-    * **Tributação Automática:** Os dividendos entram líquidos na sua conta após a retenção automática de 30% de imposto na fonte pelo governo americano[cite: 6].
-    * **Utilização do Caixa:** Acumule para gerar efeito bola de neve ou solicite remessas futuras para o Brasil conforme sua necessidade[cite: 6].
+    * **Tributação Automática:** Os dividendos entram líquidos na sua conta após a retenção automática de 30% de imposto na fonte pelo governo americano.
+    * **Utilização do Caixa:** Acumule para gerar efeito bola de neve ou solicite remessas futuras para o Brasil conforme sua necessidade.
     """)
 
 st.markdown(
