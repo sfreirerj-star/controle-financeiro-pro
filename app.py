@@ -100,12 +100,12 @@ else:
   df_aportes["competencia"] = "Indefinido"
   df_aportes["comp_ordem"] = "9999-99"
 
-# Obter lista de competências únicas ordenadas cronologicamente
-mapeamento_comps = (
-    df_lancamentos[["competencia", "comp_ordem"]]
-    .append(df_aportes[["competencia", "comp_ordem"]])
-    .drop_duplicates()
-)
+# Obter lista de competências únicas ordenadas cronologicamente (Usando pd.concat correto)
+mapeamento_comps = pd.concat([
+    df_lancamentos[["competencia", "comp_ordem"]],
+    df_aportes[["competencia", "comp_ordem"]],
+]).drop_duplicates()
+
 mapeamento_comps = mapeamento_comps[
     mapeamento_comps["competencia"] != "Indefinido"
 ].sort_values("comp_ordem", ascending=False)
