@@ -5,11 +5,17 @@ import pandas as pd
 import psycopg2
 import streamlit as st
 
+# Importa o módulo de utilidades compartilhado (onde está o seletor de competência)
+import utils
+
 st.set_page_config(
     page_title="Diagnóstico & Reserva - Painel do Marcelo",
     page_icon="🎯",
     layout="wide",
 )
+
+# Renderiza o seletor de competência na barra lateral através do utils
+competencia_selecionada = utils.carregar_menu_competencia()
 
 st.title("💰 Controle Financeiro — Painel do Marcelo")
 st.header("🎯 Diagnóstico de Gargalos & Estratégia de Reserva")
