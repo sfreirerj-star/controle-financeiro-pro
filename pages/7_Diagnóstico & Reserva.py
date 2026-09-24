@@ -5,7 +5,6 @@ import pandas as pd
 import psycopg2
 import streamlit as st
 
-# Importa o módulo de utilidades compartilhado (onde está o seletor de competência)
 import utils
 
 st.set_page_config(
@@ -14,8 +13,19 @@ st.set_page_config(
     layout="wide",
 )
 
-# Renderiza o seletor de competência na barra lateral através do utils
-competencia_selecionada = utils.carregar_menu_competencia()
+# --- SELETOR DE COMPETÊNCIA NA BARRA LATERAL ---
+st.sidebar.header("📅 Filtro de Competência")
+# Gera opções de meses ou usa o padrão integrado se houver no utils
+ano_atual = datetime.now().year
+meses_padrao = [
+    f"{m:02d}/{ano_atual}"
+    for m in range(1, 13)
+]
+competencia_selecionada = st.sidebar.selectbox(
+    "Mês de Referência",
+    options=["Todos os Meses"] + meses_padrao,
+    index=0,
+)
 
 st.title("💰 Controle Financeiro — Painel do Marcelo")
 st.header("🎯 Diagnóstico de Gargalos & Estratégia de Reserva")
@@ -26,7 +36,7 @@ st.markdown(
 )
 
 
-# Função flexível para buscar a URL do banco e carregar os dados (incluindo aportes)
+# Função flexível para buscar a URL do banco e carregar os dados
 def carregar_dados():
   try:
     db_url = None
