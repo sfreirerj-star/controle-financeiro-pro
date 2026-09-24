@@ -1,13 +1,20 @@
 from datetime import datetime
+from pathlib import Path
+import sys
 import pandas as pd
 import psycopg2
 import streamlit as st
+
+# --- GARANTE A IMPORTAÇÃO DO UTILS DA RAIZ ---
+root_path = Path(__file__).resolve().parent.parent
+if str(root_path) not in sys.path:
+  sys.path.append(str(root_path))
+
 from utils import configurar_sidebar_competencia, obter_conexao
 
 st.set_page_config(
     page_title="Novo Lançamento - Marcelo", page_icon="📝", layout="wide"
 )
-
 # Inicializar tabela no banco se não existir
 def garantir_tabelas():
   try:
