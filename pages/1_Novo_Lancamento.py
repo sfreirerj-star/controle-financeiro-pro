@@ -15,6 +15,8 @@ from utils import configurar_sidebar_competencia, obter_conexao
 st.set_page_config(
     page_title="Novo Lançamento - Marcelo", page_icon="📝", layout="wide"
 )
+
+
 # Inicializar tabela no banco se não existir
 def garantir_tabelas():
   try:
@@ -36,6 +38,7 @@ def garantir_tabelas():
   except Exception:
     pass
 
+
 garantir_tabelas()
 
 # 1. Chamar o filtro de competência na barra lateral
@@ -55,7 +58,7 @@ st.write(
     " dos aportes de investimentos."
 )
 
-# Formulário organizado nas 3 colunas, com a sequência perfeita: Data, Tipo, Categoria, Descrição, Valor
+# Formulário organizado nas 3 colunas
 with st.form("form_novo_lancamento", clear_on_submit=True):
   col1, col2, col3 = st.columns(3)
 
