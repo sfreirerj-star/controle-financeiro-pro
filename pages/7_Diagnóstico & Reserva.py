@@ -13,8 +13,16 @@ st.set_page_config(
     layout="wide",
 )
 
+st.title("💰 Controle Financeiro — Painel do Marcelo")
+st.header("🎯 Diagnóstico de Gargalos & Estratégia de Reserva")
+st.markdown(
+    "Esta aba analisa os seus lançamentos, simula o impacto da transição de"
+    " moradia em dezembro, a entrada do extra do PROEIS e traça a rota para"
+    " construir sua reserva de segurança."
+)
 
-# Função flexível para buscar a URL do banco e carregar os dados
+
+# Função flexível para buscar a URL do banco e carregar os dados (incluindo aportes)
 def carregar_dados():
   try:
     db_url = None
@@ -22,7 +30,10 @@ def carregar_dados():
       db_url = st.secrets["DATABASE_URL"]
     elif "database_url" in st.secrets:
       db_url = st.secrets["database_url"]
-    elif "connections" in st.secrets and "postgresql" in st.secrets["connections"]:
+    elif (
+        "connections" in st.secrets
+        and "postgresql" in st.secrets["connections"]
+    ):
       db_url = st.secrets["connections"]["postgresql"]["url"]
     else:
       for key in st.secrets:
@@ -56,104 +67,43 @@ def carregar_dados():
 # Carregando os dados
 df_lancamentos, df_dividas, df_aportes = carregar_dados()
 
-# --- TRATAMENTO ROBUSTO DE COMPETÊNCIA ---
-if not df_lancamentos.empty and "data" in df_lancamentos.columns:
-  # Tenta converter para datetime de forma flexível
-  datas_convertidas = pd.to_datetime(df_lancamentos["data"], errors="coerce")
-  # Se houver dados válidos em datetime, extrai o mês/ano
-  if datas_convertidas.notna().sum() > 0:
-    df_lancamentos["competencia"] = datas_convertidas.dt.strftime("%m/%Y")
-  else:
-    # Caso esteja salvo como texto (ex: 'YYYY-MM-DD' ou 'DD/MM/YYYY')
-    df_lancamentos["competencia"] = df_lancamentos["data"].astype(str)
+if df_lancamentos.empty:
+  st.info("Nenhum lançamento encontrado para gerar o diagnóstico no momento.")
 else:
-  df_lancamentos["competencia"] = "09/2026"
-
-# --- SELETOR DE COMPETÊNCIA NA BARRA LATERAL ---
-st.sidebar.header("📅 Filtro de Competência")
-
-# Descobre quais competências realmente existem no banco para listar no selectbox
-competencias_existentes = []
-if not df_lancamentos.empty and "competencia" in df_lancamentos.columns:
-  competencias_existentes = sorted(
-      df_lancamentos["competencia"].dropna().unique().tolist()
-  )
-
-# Se não encontrar nenhuma no formato ideal, garante pelo menos a 09/2026
-if not competencias_existentes:
-  competencias_existentes = ["09/2026"]
-
-# Adiciona "Todos os Meses" como primeira opção para nunca sumir os dados de cara
-opcoes_filtro = ["Todos os Meses"] + competencias_existentes
-
-competencia_selecionada = st.sidebar.selectbox(
-    "Mês de Referência", options=opcoes_filtro, index=0
-)
-
-# --- APLICANDO O FILTRO AOS DADOS ---
-if competencia_selecionada != "Todos os Meses":
-  df_filtrado = df_lancamentos[
-      df_lancamentos["competencia"] == competencia_selecionada
-  ]
-else:
-  df_filtrado = df_lancamentos.copy()
-
-st.title("💰 Controle Financeiro — Painel do Marcelo")
-st.header("🎯 Diagnóstico de Gargalos & Estratégia de Reserva")
-st.markdown(
-    f"Exibindo dados para o período: **{competencia_selecionada}**. Esta aba"
-    " analisa seus lançamentos, simula o impacto da transição de moradia em"
-    " dezembro, a entrada do extra do PROEIS e traça a rota para construir sua"
-    " reserva."
-)
-
-if df_filtrado.empty:
-  st.warning(
-      f"Nenhum lançamento encontrado para a competência"
-      f" {competencia_selecionada}. Tente selecionar 'Todos os Meses' no menu"
-      " lateral."
-  )
-else:
-  df_filtrado["valor"] = pd.to_numeric(
-      df_filtrado["valor"], errors="coerce"
+  # Tratamento de dados de lançamentos
+  df_lancamentos["valor"] = pd.to_numeric(
+      df_lancamentos["valor"], errors="coerce"
   ).fillna(0.0)
 
-  receitas_total = df_filtrado[
-      df_filtrado["tipo"].str.lower() == "receita"
+  receitas_total = df_lancamentos[
+      df_lancamentos["tipo"].str.lower() == "receita"
   ]["valor"].sum()
-  despesas_total = df_filtrado[
-      df_filtrado["tipo"].str.lower() == "despesa"
+  despesas_total = df_lancamentos[
+      df_lancamentos["tipo"].str.lower() == "despesa"
   ]["valor"].sum()
 
+  # Tratamento de aportes para a reserva de segurança atual
   total_aportes = 0.0
-  if not df_aportes.empty:
-    if "valor" in df_aportes.columns:
-      total_aportes = (
-          pd.to_numeric(df_aportes["valor"], errors="coerce")
-          .fillna(0.0)
-          .sum()
-      )
-    elif "valor_num" in df_aportes.columns:
-      total_aportes = (
-          pd.to_numeric(df_aportes["valor_num"], errors="coerce")
-          .fillna(0.0)
-          .sum()
-      )
+  if not df_aportes.empty and "valor" in df_aportes.columns:
+    total_aportes = (
+        pd.to_numeric(df_aportes["valor"], errors="coerce")
+        .fillna(0.0)
+        .sum()
+    )
 
-  saldo_atual = receitas_total - despesas_total
+  # Saldo atual corrigido descontando as despesas e os aportes realizados
+  saldo_atual = receitas_total - despesas_total - total_aportes
 
-  # Métricas Gerais Atuais
-  st.subheader(f"📊 Panorama do Período ({competencia_selecionada})")
+  # Métricas Gerais Atuais com 4 colunas (incluindo Reserva de Segurança Atual)
+  st.subheader("📊 Panorama Atual (Com Aluguel)")
   col1, col2, col3, col4 = st.columns(4)
-  col1.metric("Receita do Período", f"R$ {receitas_total:,.2f}")
-  col2.metric("Despesa do Período", f"R$ {despesas_total:,.2f}")
+  col1.metric("Receita Atual", f"R$ {receitas_total:,.2f}")
+  col2.metric("Despesa Atual", f"R$ {despesas_total:,.2f}")
   col3.metric(
-      "Reserva Atual (Aportes)",
-      f"R$ {total_aportes:,.2f}",
-      delta="Acumulado Geral 💰",
+      "Reserva Atual (Aportes)", f"R$ {total_aportes:,.2f}", delta="Acumulado 💰"
   )
   col4.metric(
-      "Resultado Líquido",
+      "Resultado Líquido Atual",
       f"R$ {saldo_atual:,.2f}",
       delta=(
           f"{(saldo_atual/receitas_total)*100:.1f}% da Receita"
@@ -174,7 +124,7 @@ else:
       " o aluguel) e a injeção do extra do PROEIS na formação da sua reserva."
   )
 
-  df_despesas = df_filtrado[df_filtrado["tipo"].str.lower() == "despesa"]
+  df_despesas = df_lancamentos[df_lancamentos["tipo"].str.lower() == "despesa"]
   aluguel_atual = 0.0
   if not df_despesas.empty:
     aluguel_match = df_despesas[
@@ -200,11 +150,13 @@ else:
     economia_aluguel = aluguel_atual if entregar_aluguel else 0.0
 
     nova_despesa_total = despesas_total - economia_aluguel
-    novo_saldo_mensal = receitas_total - nova_despesa_total
-    meta_reserva_futura = (nova_despesa_total / 30) * 180
+    novo_saldo_mensal = receitas_total - nova_despesa_total - total_aportes
+    meta_reserva_futura = (
+        nova_despesa_total / 30
+    ) * 180  # Meta de 6 meses das novas despesas
 
   with col_tr2:
-    st.markdown("#### 🎯 Projeção de Caixa")
+    st.markdown("#### 🎯 Projeção de Caixa (A partir de Dezembro)")
     st.metric(
         "Nova Despesa Mensal",
         f"R$ {nova_despesa_total:,.2f}",
@@ -235,11 +187,20 @@ else:
         """,
         unsafe_allow_html=True,
     )
+  else:
+    st.markdown(
+        """
+        <div style="padding: 15px; border-radius: 8px; background-color: rgba(255, 165, 0, 0.1); border-left: 5px solid #ffa500; margin-top: 15px;">
+            <b>Atenção:</b> O saldo mensal projetado está zerado ou negativo. Para calcular o tempo estimado da reserva, marque a opção acima para <b>Entregar o imóvel alugado em Dezembro</b>, liberando assim a folga financeira necessária.
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
   st.divider()
 
-  # Mapeamento de Gargalos
-  st.subheader(f"🔍 Mapeamento de Saídas ({competencia_selecionada})")
+  # Mapeamento de Gargalos Clássico
+  st.subheader("🔍 Mapeamento Detalhado de Saídas Atuais")
   if not df_despesas.empty:
     gargalos = (
         df_despesas.groupby("categoria")["valor"]
@@ -259,3 +220,13 @@ else:
         ),
         use_container_width=True,
     )
+
+  st.divider()
+
+  # Plano de Ação Estratégico
+  st.subheader("🛡️ Plano Diretor de Transição Patrimonial")
+  st.markdown(f"""
+    1. **Foco na Data de Dezembro:** Mantenha a disciplina financeira atual até completar o prazo contratual do Quinto Andar. A própria inércia do contrato resolve o problema estrutural do aluguel sem multas rescisórias abusivas.
+    2. **Blindagem do PROEIS (R$ {valor_proeis:,.2f}):** Quando esse valor for creditado, **não o misture com a conta corrente comum**. Destine-o imediatamente para uma aplicação de renda fixa com liquidez diária (criando a fundação da sua reserva).
+    3. **Aproveitamento do Imóvel Próprio:** A mudança para o seu apartamento em dezembro converterá um custo perdido (aluguel a terceiros) em permanência no seu próprio patrimônio, reduzindo drasticamente o escoamento de caixa.
+    """)
