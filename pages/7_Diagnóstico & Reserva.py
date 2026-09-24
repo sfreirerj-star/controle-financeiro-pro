@@ -56,29 +56,38 @@ def carregar_dados():
 # Carregando os dados
 df_lancamentos, df_dividas, df_aportes = carregar_dados()
 
-# --- TRATAMENTO DE DATAS E COMPETÊNCIA ---
+# --- TRATAMENTO ROBUSTO DE COMPETÊNCIA ---
 if not df_lancamentos.empty and "data" in df_lancamentos.columns:
-  df_lancamentos["data"] = pd.to_datetime(
-      df_lancamentos["data"], errors="coerce"
-  )
-  df_lancamentos["competencia"] = df_lancamentos["data"].dt.strftime("%m/%Y")
+  # Tenta converter para datetime de forma flexível
+  datas_convertidas = pd.to_datetime(df_lancamentos["data"], errors="coerce")
+  # Se houver dados válidos em datetime, extrai o mês/ano
+  if datas_convertidas.notna().sum() > 0:
+    df_lancamentos["competencia"] = datas_convertidas.dt.strftime("%m/%Y")
+  else:
+    # Caso esteja salvo como texto (ex: 'YYYY-MM-DD' ou 'DD/MM/YYYY')
+    df_lancamentos["competencia"] = df_lancamentos["data"].astype(str)
 else:
   df_lancamentos["competencia"] = "09/2026"
 
-# --- SELETOR DE COMPETÊNCIA NA BARRA LATERAL (A partir de 09/2026) ---
+# --- SELETOR DE COMPETÊNCIA NA BARRA LATERAL ---
 st.sidebar.header("📅 Filtro de Competência")
 
-# Gera os meses a partir de setembro de 2026 até dezembro (ou dinâmico)
-ano_atual = datetime.now().year
-meses_disponiveis = []
-for m in range(9, 13):  # De setembro (09) a dezembro (12)
-  meses_disponiveis.append(f"{m:02d}/{ano_atual}")
+# Descobre quais competências realmente existem no banco para listar no selectbox
+competencias_existentes = []
+if not df_lancamentos.empty and "competencia" in df_lancamentos.columns:
+  competencias_existentes = sorted(
+      df_lancamentos["competencia"].dropna().unique().tolist()
+  )
 
-# Adiciona próximos anos se houver necessidade ou dados
+# Se não encontrar nenhuma no formato ideal, garante pelo menos a 09/2026
+if not competencias_existentes:
+  competencias_existentes = ["09/2026"]
+
+# Adiciona "Todos os Meses" como primeira opção para nunca sumir os dados de cara
+opcoes_filtro = ["Todos os Meses"] + competencias_existentes
+
 competencia_selecionada = st.sidebar.selectbox(
-    "Mês de Referência",
-    options=["Todos os Meses"] + meses_disponiveis,
-    index=1,  # Deixa selecionado o primeiro mês útil (09/2026) por padrão
+    "Mês de Referência", options=opcoes_filtro, index=0
 )
 
 # --- APLICANDO O FILTRO AOS DADOS ---
@@ -101,7 +110,8 @@ st.markdown(
 if df_filtrado.empty:
   st.warning(
       f"Nenhum lançamento encontrado para a competência"
-      f" {competencia_selecionada}."
+      f" {competencia_selecionada}. Tente selecionar 'Todos os Meses' no menu"
+      " lateral."
   )
 else:
   df_filtrado["valor"] = pd.to_numeric(
