@@ -27,12 +27,23 @@ def garantir_tabelas():
   try:
     conexao = obter_conexao()
     cursor = conexao.cursor()
+    # Tabela de Aportes
     cursor.execute("""
             CREATE TABLE IF NOT EXISTS desafio_aportes (
                 id SERIAL PRIMARY KEY,
                 data TEXT NOT NULL,
                 valor NUMERIC(10,2) NOT NULL,
                 local_aplicacao TEXT NOT NULL
+            )
+        """)
+    # Tabela de Resgates de Aportes (Novo Módulo)
+    cursor.execute("""
+            CREATE TABLE IF NOT EXISTS desafio_resgates (
+                id SERIAL PRIMARY KEY,
+                data TEXT NOT NULL,
+                valor NUMERIC(10,2) NOT NULL,
+                local_origem TEXT NOT NULL,
+                motivo TEXT
             )
         """)
     conexao.commit()
@@ -47,7 +58,7 @@ garantir_tabelas()
 st.title("💰 Controle Financeiro — Painel do Marcelo")
 st.subheader("🎯 Desafio Personalizado & Simulador de Antecipação")
 st.write(
-    "Controle seus aportes mensais, diversifique suas instituições financeiras"
+    "Controle seus aportes mensais, gerencie resgates, diversifique suas instituições financeiras"
     " e simule o impacto de ganhos extras nas suas metas."
 )
 
@@ -58,8 +69,9 @@ def fmt_moeda(v):
   )
 
 
-aba_desafio, aba_simulador, aba_orientacao = st.tabs([
+aba_desafio, aba_resgate, aba_simulador, aba_orientacao = st.tabs([
     "🎯 Meu Desafio & Aportes",
+    "💸 Módulo de Resgates",
     "🎯 Simulador de Antecipação",
     "📈 Consultoria Diária de Investimentos (Moderado)",
 ])
@@ -107,17 +119,32 @@ with aba_desafio:
         " id DESC",
         conexao,
     )
+    df_resgates = pd.read_sql_query(
+        "SELECT id, data, valor, local_origem, motivo FROM desafio_resgates ORDER BY id DESC",
+        conexao,
+    )
     conexao.close()
   except Exception:
     df_aportes = pd.DataFrame(columns=["id", "data", "valor", "local_aplicacao"])
+    df_resgates = pd.DataFrame(columns=["id", "data", "valor", "local_origem", "motivo"])
 
   if not df_aportes.empty:
     df_aportes["valor_num"] = (
         pd.to_numeric(df_aportes["valor"], errors="coerce").fillna(0.0)
     )
-    total_guardado = df_aportes["valor_num"].sum()
+    total_aportado = df_aportes["valor_num"].sum()
   else:
-    total_guardado = 0.0
+    total_aportado = 0.0
+
+  if not df_resgates.empty:
+    df_resgates["valor_num"] = (
+        pd.to_numeric(df_resgates["valor"], errors="coerce").fillna(0.0)
+    )
+    total_resgatado = df_resgates["valor_num"].sum()
+  else:
+    total_resgatado = 0.0
+
+  total_guardado = total_aportado - total_resgatado
 
   progresso_perc = (
       min(total_guardado / meta_total, 1.0) if meta_total > 0 else 0.0
@@ -129,11 +156,11 @@ with aba_desafio:
   with col1:
     st.metric("Meta Total Calculada", fmt_moeda(meta_total))
   with col2:
-    st.metric("Meta Mensal Escolhida", fmt_moeda(meta_mensal_base))
+    st.metric("Total Aportado", fmt_moeda(total_aportado))
   with col3:
-    st.metric("Total Acumulado Real", fmt_moeda(total_guardado))
+    st.metric("Total Resgatado", fmt_moeda(total_resgatado))
   with col4:
-    st.metric("Prazo", f"{meses_totais} Meses")
+    st.metric("Patrimônio Líquido Guardado", fmt_moeda(total_guardado))
 
   st.write("")
   st.progress(
@@ -163,7 +190,7 @@ with aba_desafio:
       valor_aporte = st.number_input(
           "Valor Depositado (R$)",
           min_value=1.0,
-          value=meta_mensal_base,
+          value=meta_mensal_base if meta_mensal_base > 0 else 532.00,
           step=10.0,
           format="%.2f",
       )
@@ -227,7 +254,6 @@ with aba_desafio:
         ids_disponiveis,
     )
 
-    # Buscar dados do ID selecionado para preencher o formulário de edição
     dados_atual = df_aportes[df_aportes["id"] == id_selecionado].iloc[0]
 
     with st.form("form_editar_aporte"):
@@ -256,7 +282,6 @@ with aba_desafio:
             "Tesouro Selic (Tesouro Direto)",
             "Outro (Personalizado)",
         ]
-        # Se o local salvo não estiver na lista padrão, assume "Outro"
         idx_default = (
             locais_edicao.index(local_atual)
             if local_atual in locais_edicao
@@ -332,24 +357,34 @@ with aba_desafio:
 
   st.divider()
 
-  st.markdown("### 🏦 Saldo e Distribuição por Banco / Corretora")
+  st.markdown("### 🏦 Saldo e Distribuição por Banco / Corretora (Líquido)")
   if not df_aportes.empty:
-    df_resumo_bancos = (
-        df_aportes.groupby("local_aplicacao")["valor_num"]
-        .sum()
-        .reset_index()
-    )
-    df_resumo_bancos["Valor Acumulado"] = df_resumo_bancos["valor_num"].apply(
-        fmt_moeda
-    )
-    df_resumo_bancos["% do Total"] = (
-        (df_resumo_bancos["valor_num"] / total_guardado) * 100
-    ).apply(lambda x: f"{x:.1f}%")
+    # Agrupa aportes por instituição
+    df_resumo_aportes = df_aportes.groupby("local_aplicacao")["valor_num"].sum().reset_index()
+    
+    # Se houver resgates, subtrai proporcionalmente ou por local (opcional: aqui unificamos o saldo líquido consolidado)
+    if not df_resgates.empty:
+      df_resumo_resgates = df_resgates.groupby("local_origem")["valor_num"].sum().reset_index()
+      df_resumo_bancos = pd.merge(df_resumo_aportes, df_resumo_resgates, left_on="local_aplicacao", right_on="local_origem", how="left").fillna(0)
+      df_resumo_bancos["valor_liquido"] = df_resumo_bancos["valor_num_x"] - df_resumo_bancos["valor_num_y"]
+      df_resumo_bancos = df_resumo_bancos[["local_aplicacao", "valor_liquido"]].rename(columns={"valor_liquido": "valor_num"})
+    else:
+      df_resumo_bancos = df_resumo_aportes
 
-    df_tabela_bancos = df_resumo_bancos[
-        ["local_aplicacao", "Valor Acumulado", "% do Total"]
-    ].rename(columns={"local_aplicacao": "Instituição / Local"})
-    st.dataframe(df_tabela_bancos, use_container_width=True, hide_index=True)
+    df_resumo_bancos = df_resumo_bancos[df_resumo_bancos["valor_num"] > 0]
+    
+    if not df_resumo_bancos.empty and total_guardado > 0:
+      df_resumo_bancos["Valor Acumulado"] = df_resumo_bancos["valor_num"].apply(fmt_moeda)
+      df_resumo_bancos["% do Total"] = (
+          (df_resumo_bancos["valor_num"] / total_guardado) * 100
+      ).apply(lambda x: f"{x:.1f}%")
+
+      df_tabela_bancos = df_resumo_bancos[
+          ["local_aplicacao", "Valor Acumulado", "% do Total"]
+      ].rename(columns={"local_aplicacao": "Instituição / Local"})
+      st.dataframe(df_tabela_bancos, use_container_width=True, hide_index=True)
+    else:
+      st.info("Saldo líquido distribuído zerado ou indisponível.")
   else:
     st.info("Nenhuma aplicação registrada para calcular a distribuição ainda.")
 
@@ -369,7 +404,125 @@ with aba_desafio:
   else:
     st.info("Nenhum aporte registrado ainda.")
 
-# --- ABA 2: SIMULADOR DE ANTECIPAÇÃO DE METAS ---
+
+# --- ABA 2: MÓDULO DE RESGATES ---
+with aba_resgate:
+  st.markdown("### 💸 Módulo de Resgate de Aportes")
+  st.write(
+      "Registre retiradas ou resgates parciais/totais realizados nas suas contas e investimentos."
+  )
+
+  with st.form("form_novo_resgate"):
+    col_r1, col_r2, col_r3 = st.columns(3)
+    with col_r1:
+      data_resgate = st.text_input(
+          "Data do Resgate (DD/MM/AAAA)",
+          value=datetime.now().strftime("%d/%m/%Y"),
+          key="resgate_data",
+      )
+    with col_r2:
+      valor_resgate = st.number_input(
+          "Valor Resgatado (R$)",
+          min_value=1.0,
+          value=100.00,
+          step=50.0,
+          format="%.2f",
+          key="resgate_valor",
+      )
+    with col_r3:
+      locais_resgate = [
+          "Banco Itaú",
+          "Nomad (Investimentos em Dólar)",
+          "Sofisa Direto (CDB 105% CDI)",
+          "Banco Inter (CDB Liquidez Diária)",
+          "Nubank (Caixinha / RDB 100% CDI)",
+          "Tesouro Selic (Tesouro Direto)",
+          "Outro (Personalizado)",
+      ]
+      local_origem_sel = st.selectbox(
+          "Instituição de Origem do Resgate", locais_resgate, key="resgate_local"
+      )
+
+    origem_personalizada = st.text_input(
+        "Se selecionou 'Outro (Personalizado)' acima, digite o nome do Banco ou Corretora:",
+        key="resgate_outro_local",
+    )
+    
+    motivo_resgate = st.text_input(
+        "Motivo do Resgate / Destino (Ex: Emergência, Oportunidade, Compra, etc.)",
+        key="resgate_motivo",
+    )
+
+    if st.form_submit_button("📤 Registrar Resgate"):
+      if local_origem_sel == "Outro (Personalizado)":
+        origem_final = (
+            origem_personalizada.strip()
+            if origem_personalizada.strip()
+            else "Outro"
+        )
+      else:
+        origem_final = local_origem_sel
+
+      try:
+        datetime.strptime(data_resgate.strip(), "%d/%m/%Y")
+        conexao = obter_conexao()
+        cursor = conexao.cursor()
+        cursor.execute(
+            "INSERT INTO desafio_resgates (data, valor, local_origem, motivo) VALUES (%s, %s, %s, %s)",
+            (data_resgate.strip(), valor_resgate, origem_final, motivo_resgate.strip()),
+        )
+        conexao.commit()
+        cursor.close()
+        conexao.close()
+        st.success("Resgate registrado com sucesso!")
+        st.rerun()
+      except ValueError:
+        st.error("Data inválida. Utilize o formato DD/MM/AAAA.")
+      except Exception as e:
+        st.error(f"Erro ao salvar resgate: {e}")
+
+  st.divider()
+
+  st.markdown("### 📋 Histórico de Resgates Realizados")
+  if not df_resgates.empty:
+    df_tabela_resgates = df_resgates[
+        ["id", "data", "local_origem", "valor_num", "motivo"]
+    ].rename(
+        columns={
+            "local_origem": "Instituição de Origem",
+            "valor_num": "Valor Resgatado",
+            "motivo": "Motivo / Destino",
+        }
+    )
+    df_tabela_resgates["Valor Resgatado"] = df_tabela_resgates["Valor Resgatado"].apply(fmt_moeda)
+    st.dataframe(
+        df_tabela_resgates.set_index("id"), use_container_width=True, height=200
+    )
+
+    # Opção para excluir um resgate lançado incorretamente
+    st.markdown("#### 🗑️ Excluir Lançamento de Resgate")
+    id_resgate_excluir = st.selectbox(
+        "Selecione o ID do resgate que deseja excluir:",
+        df_resgates["id"].tolist(),
+        key="excluir_resg_id"
+    )
+    if st.button("Excluir Resgate Selecionado"):
+      try:
+        conexao = obter_conexao()
+        cursor = conexao.cursor()
+        cursor.execute("DELETE FROM desafio_resgates WHERE id = %s", (int(id_resgate_excluir),))
+        conexao.commit()
+        cursor.close()
+        conexao.close()
+        st.warning(f"Resgate ID {id_resgate_excluir} excluído com sucesso!")
+        st.rerun()
+      except Exception as e:
+        st.error(f"Erro ao excluir resgate: {e}")
+  else:
+    st.info("Nenhum resgate registrado até o momento.")
+
+
+# --- ABA 3: SIMULADOR DE ANTECIPAÇÃO DE METAS ---
 with aba_simulador:
   st.markdown("### 🎯 Simulador de Antecipação de Metas")
   st.write(
@@ -549,7 +702,7 @@ with aba_simulador:
       ]
   )
 
-# --- ABA 3: CONSULTORIA DIÁRIA DE INVESTIMENTOS (MODERADO) ---
+# --- ABA 4: CONSULTORIA DIÁRIA DE INVESTIMENTOS (MODERADO) ---
 with aba_orientacao:
   st.markdown("### 📈 Painel Diário de Alocação & Mercado (Perfil Moderado)")
   st.write(
