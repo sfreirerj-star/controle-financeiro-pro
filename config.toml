@@ -1,0 +1,6 @@
+[theme]
+primaryColor = "#2563eb"          # Azul moderno e elegante
+backgroundColor = "#f8fafc"       # Fundo cinza claro sofisticado (sai aquele branco chapado)
+secondaryBackgroundColor = "#ffffff" # Cartões e menus totalmente brancos
+textColor = "#1e293b"             # Texto em cinza escuro de alta legibilidade
+font = "sans serif"
