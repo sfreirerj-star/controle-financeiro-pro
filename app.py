@@ -18,11 +18,6 @@ aplicar_estilo_moderno()
 # Garante que o banco de dados e as tabelas estão inicializados
 database.inicializar_banco()
 
-def obter_conexao():
-  """Retorna a conexão com a base de dados PostgreSQL centralizada nos secrets."""
-  return psycopg2.connect(st.secrets["DATABASE_URL"])
-
-
 # Inicialização segura dos DataFrames
 df_lancamentos = pd.DataFrame(
     columns=["id", "data", "tipo", "categoria", "descricao", "valor"]
@@ -131,7 +126,7 @@ ordem_selecionada = (
 # --- CORPO DA PÁGINA PRINCIPAL (PAINEL & GRÁFICOS) ---
 st.title("💰 Controle Financeiro — Painel do Marcelo")
 st.write(
-    "Aplicativo unificado de controle de créditos, débitos e investimentos"
+    "Aplicativo unificado de controle de créditos, débitos, investimentos e dívidas"
     f" (Competência: **{competencia_selecionada}**)."
 )
 
@@ -336,7 +331,6 @@ df_creditos_mes = (
 )
 
 if not df_creditos_mes.empty and "id" in df_creditos_mes.columns:
-  # Remover colunas desnecessárias ou de controle
   for col_aux in [
       "tipo",
       "tipo_clean",
@@ -363,7 +357,6 @@ df_debitos_mes = (
 )
 
 if not df_debitos_mes.empty and "id" in df_debitos_mes.columns:
-  # Remover colunas desnecessárias ou de controle
   for col_aux in [
       "tipo",
       "tipo_clean",
@@ -378,6 +371,23 @@ if not df_debitos_mes.empty and "id" in df_debitos_mes.columns:
   st.dataframe(df_debitos_mes.set_index("id"), use_container_width=True)
 else:
   st.info("Nenhum débito registrado nesta competência.")
+
+
+# --- SEÇÃO DE GESTÃO DE DÍVIDAS ---
+st.divider()
+st.subheader("💳 Gestão e Controle de Dívidas")
+
+if not df_dividas.empty:
+  df_dividas_fmt = df_dividas.copy()
+  if "valor_total" in df_dividas_fmt.columns:
+    df_dividas_fmt["valor_total"] = df_dividas_fmt["valor_total"].apply(fmt_moeda)
+  if "juros_mensal" in df_dividas_fmt.columns:
+    df_dividas_fmt["juros_mensal"] = df_dividas_fmt["juros_mensal"].apply(
+        lambda x: f"{float(x):.2f}%" if pd.notna(x) else "0.00%"
+    )
+  st.dataframe(df_dividas_fmt.set_index("id"), use_container_width=True)
+else:
+  st.info("Nenhuma dívida registada no sistema.")
 
 
 # --- SEÇÃO DE BALANCETE COMPARATIVO MÊS A MÊS ---
