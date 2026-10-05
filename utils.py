@@ -92,3 +92,52 @@ def configurar_sidebar_competencia(
   )
 
   return competencia_selecionada, ordem_sel
+
+def aplicar_estilo_moderno():
+    """Aplica estilos CSS globais para transformar o Streamlit em um painel estilo SaaS moderno."""
+    st.markdown("""
+        <style>
+            /* Fundo principal mais suave */
+            .main {
+                background-color: #f8fafc;
+            }
+            
+            /* Transforma os blocos de conteúdo em cartões flutuantes modernos com sombra */
+            div[data-testid="stVerticalBlock"] > div[style*="flex-direction: column;"] > div[data-testid="stVerticalBlock"] {
+                background: #ffffff;
+                padding: 1.2rem;
+                border-radius: 12px;
+                box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.05), 0 2px 4px -2px rgb(0 0 0 / 0.05);
+                border: 1px solid #e2e8f0;
+                margin-bottom: 1rem;
+            }
+
+            /* Botões modernos com bordas arredondadas e efeito hover */
+            .stButton > button {
+                border-radius: 8px;
+                font-weight: 600;
+                border: none;
+                box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+                transition: all 0.2s ease;
+            }
+            
+            .stButton > button:hover {
+                transform: translateY(-1px);
+                box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+            }
+
+            /* Barra lateral (Sidebar) mais limpa */
+            section[data-testid="stSidebar"] {
+                background-color: #ffffff;
+                border-right: 1px solid #e2e8f0;
+            }
+
+            /* Responsividade perfeita para telemóveis */
+            @media (max-width: 768px) {
+                .main .block-container {
+                    padding-left: 1rem;
+                    padding-right: 1rem;
+                }
+            }
+        </style>
+    """, unsafe_allow_html=True)
