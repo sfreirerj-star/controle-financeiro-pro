@@ -1,14 +1,22 @@
 from datetime import datetime
+import streamlit as st
 import pandas as pd
 import plotly.express as px
-import psycopg2
-import streamlit as st
+from utils import aplicar_estilo_moderno
+import database
 
 # Configuração da Página
 st.set_page_config(
-    page_title="Controle Financeiro - Marcelo", page_icon="💰", layout="wide"
+    page_title="Controle Financeiro - Marcelo",
+    page_icon="💰",
+    layout="wide"
 )
 
+# Ativa o visual moderno de cartões em toda a página
+aplicar_estilo_moderno()
+
+# Garante que o banco de dados e as tabelas estão inicializados
+database.inicializar_banco()
 
 def obter_conexao():
   """Retorna a conexão com a base de dados PostgreSQL centralizada nos secrets."""
@@ -24,33 +32,18 @@ df_dividas = pd.DataFrame(
     columns=["id", "credor", "valor_total", "juros_mensal", "status"]
 )
 
-# Carregamento robusto direto das tabelas oficiais do projeto
+# Carregamento robusto direto das tabelas oficiais do SQLite local
 try:
-  conexao = obter_conexao()
-
-  # 1. Carregar Lançamentos (Entradas e Gastos Comuns)
-  try:
-    df_lancamentos = pd.read_sql_query("SELECT * FROM lancamentos", conexao)
-  except Exception:
-    conexao.rollback()
-
-  # 2. Carregar Aportes da tabela correta do Desafio de Reserva
-  try:
-    df_aportes = pd.read_sql_query(
-        "SELECT id, data, valor, local_aplicacao FROM desafio_aportes", conexao
-    )
-  except Exception:
-    conexao.rollback()
-
-  # 3. Carregar Dívidas
-  try:
-    df_dividas = pd.read_sql_query("SELECT * FROM dividas", conexao)
-  except Exception:
-    conexao.rollback()
-
-  conexao.close()
+    conexao = database.obter_conexao()
+    df_lancamentos = pd.read_sql("SELECT * FROM lancamentos", conexao)
+    df_aportes = pd.read_sql("SELECT * FROM aportes", conexao)
+    df_dividas = pd.read_sql("SELECT * FROM dividas", conexao)
+    conexao.close()
 except Exception as e:
-  st.sidebar.error(f"Erro geral de conexão com o banco: {e}")
+    st.error(f"Erro ao carregar dados do banco local: {e}")
+    df_lancamentos = pd.DataFrame(columns=["id", "data", "tipo", "categoria", "descricao", "valor"])
+    df_aportes = pd.DataFrame(columns=["id", "data", "local_aplicacao", "descricao", "valor"])
+    df_dividas = pd.DataFrame(columns=["id", "credor", "valor_total", "juros_mensal", "status"])
 
 # Tratamento e soma segura dos aportes
 if not df_aportes.empty and "valor" in df_aportes.columns:
