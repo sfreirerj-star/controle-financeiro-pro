@@ -1,59 +1,44 @@
 from datetime import datetime
-import streamlit as st
 import pandas as pd
 import plotly.express as px
 import psycopg2
+import streamlit as st
 from utils import aplicar_estilo_moderno
 
-# Configuração da Página
+# 1. Configuração da Página e Aplicação do Estilo DEVEM ser chamadas juntas no topo
 st.set_page_config(
     page_title="Controle Financeiro - Marcelo", page_icon="💰", layout="wide"
 )
-
-# Ativa o visual moderno de cartões em toda a página
-aplicar_estilo_moderno()
-st.markdown(
-    """
-    <style>
-    /* Correção dedicada e isolada para o menu lateral no painel principal (app.py) */
-    @media (max-width: 768px) {
-        div[data-baseweb="modal"], div[data-baseweb="drawer"], section[data-testid="stSidebar"] {
-            background-color: #ffffff !important;
-        }
-        
-        /* Garante que as colunas do painel principal empilhem em vez de esmagar os cartões */
-        div[data-testid="stHorizontalBlock"] {
-            flex-direction: column !important;
-        }
-    }
-    </style>
-""",
-    unsafe_allow_html=True,
-)
+aplicar_estilo_moderno()  # <-- Essencial logo após o set_page_config
 
 
 def obter_conexao():
-    """Retorna a conexão com a base de dados PostgreSQL centralizada nos secrets."""
-    return psycopg2.connect(st.secrets["DATABASE_URL"])
+  """Retorna a conexão com a base de dados PostgreSQL centralizada nos secrets."""
+  return psycopg2.connect(st.secrets["DATABASE_URL"])
 
-# === COLE AQUI O BLOCO DE CSS RESPONSIVO ===
+
+# === CSS RESPONSIVO & CORREÇÃO DA TRANSPARÊNCIA DO MENU LATERAL ===
 st.markdown(
     """
     <style>
-    /* Ajustes limpos para telemóveis */
+    /* Força o fundo opaco e sólido no menu lateral em celulares e desktops */
+    section[data-testid="stSidebar"] {
+        background-color: var(--background-color, #ffffff) !important;
+        opacity: 1 !important;
+    }
+    section[data-testid="stSidebar"] > div {
+        background-color: inherit !important;
+    }
+
     @media (max-width: 768px) {
-        /* Ajusta o tamanho dos textos dos cartões métricos */
         div[data-testid="stMetricValue"] {
             font-size: 1.2rem !important;
         }
         div[data-testid="stMetricLabel"] {
             font-size: 0.85rem !important;
         }
-        
-        /* Garante que o menu lateral tem fundo sólido quando aberto no telemóvel */
-        section[data-testid="stSidebar"] {
-            background-color: var(--background-color) !important;
-            z-index: 999999 !important;
+        div[data-testid="metric-container"] {
+            padding: 5px !important;
         }
     }
     </style>
@@ -63,52 +48,51 @@ st.markdown(
 
 # Inicialização segura dos DataFrames
 df_lancamentos = pd.DataFrame(
-    columns=["id", "data", "tipo", "categoria", "descricao", "valor"]
+    columns=["data", "tipo", "categoria", "descricao", "valor"]
 )
-df_aportes = pd.DataFrame(columns=["id", "data", "valor", "local_aplicacao"])
+df_aportes = pd.DataFrame(columns=["data", "valor", "local_aplicacao"])
 df_dividas = pd.DataFrame(
-    columns=["id", "credor", "valor_total", "juros_mensal", "status"]
+    columns=["credor", "valor_total", "juros_mensal", "status"]
 )
 
 # Carregamento robusto direto das tabelas oficiais do Supabase
 try:
-    conexao = obter_conexao()
+  conexao = obter_conexao()
 
-    # 1. Carregar Lançamentos
+  # 1. Carregar Lançamentos
+  try:
+    df_lancamentos = pd.read_sql_query("SELECT * FROM lancamentos", conexao)
+  except Exception:
+    conexao.rollback()
+
+  # 2. Carregar Aportes
+  try:
+    df_aportes = pd.read_sql_query(
+        "SELECT id, data, valor, local_aplicacao FROM desafio_aportes", conexao
+    )
+  except Exception:
     try:
-        df_lancamentos = pd.read_sql_query("SELECT * FROM lancamentos", conexao)
+      df_aportes = pd.read_sql_query(
+          "SELECT id, data, valor, local_aplicacao FROM aportes", conexao
+      )
     except Exception:
-        conexao.rollback()
+      conexao.rollback()
 
-    # 2. Carregar Aportes
-    try:
-        df_aportes = pd.read_sql_query(
-            "SELECT id, data, valor, local_aplicacao FROM desafio_aportes", conexao
-        )
-    except Exception:
-        try:
-            df_aportes = pd.read_sql_query(
-                "SELECT id, data, valor, local_aplicacao FROM aportes", conexao
-            )
-        except Exception:
-            conexao.rollback()
+  # 3. Carregar Dívidas
+  try:
+    df_dividas = pd.read_sql_query("SELECT * FROM dividas", conexao)
+  except Exception:
+    conexao.rollback()
 
-    # 3. Carregar Dívidas
-    try:
-        df_dividas = pd.read_sql_query("SELECT * FROM dividas", conexao)
-    except Exception:
-        conexao.rollback()
-
-    conexao.close()
+  conexao.close()
 except Exception as e:
-    st.sidebar.error(f"Erro geral de conexão com o banco na nuvem: {e}")
-
+  st.sidebar.error(f"Erro geral de conexão com o banco na nuvem: {e}")
 
 # Tratamento e soma segura dos aportes
 if not df_aportes.empty and "valor" in df_aportes.columns:
-  df_aportes["valor_num"] = (
-      pd.to_numeric(df_aportes["valor"], errors="coerce").fillna(0.0)
-  )
+  df_aportes["valor_num"] = pd.to_numeric(
+      df_aportes["valor"], errors="coerce"
+  ).fillna(0.0)
   total_aportes_geral = df_aportes["valor_num"].sum()
 else:
   total_aportes_geral = 0.0
@@ -120,6 +104,7 @@ def fmt_moeda(valor):
       .replace(".", ",")
       .replace("X", ".")
   )
+
 
 # --- PROCESSAMENTO DE COMPETÊNCIAS (MM/AAAA) ---
 def extrair_competencia(data_str):
@@ -151,7 +136,6 @@ else:
   df_aportes["competencia"] = "Indefinido"
   df_aportes["comp_ordem"] = "9999-99"
 
-# Obter lista de competências únicas ordenadas cronologicamente
 mapeamento_comps = pd.concat([
     df_lancamentos[["competencia", "comp_ordem"]],
     df_aportes[["competencia", "comp_ordem"]],
@@ -177,34 +161,31 @@ competencia_selecionada = st.sidebar.selectbox(
     else len(competencias_disponiveis) - 1,
 )
 
-# Descobrir a ordem correspondente para filtros internos
 ordem_selecionada = (
-    mapeamento_comps[
-        mapeamento_comps["competencia"] == competencia_selecionada
-    ]["comp_ordem"].values[0]
+    mapeamento_comps[mapeamento_comps["competencia"] == competencia_selecionada][
+        "comp_ordem"
+    ].values[0]
     if competencia_selecionada in mapeamento_comps["competencia"].values
     else datetime.now().strftime("%Y-%m")
 )
 
-# --- CORPO DA PÁGINA PRINCIPAL (PAINEL & GRÁFICOS) ---
+# --- CORPO DA PÁGINA PRINCIPAL ---
 st.title("💰 Controle Financeiro — Painel do Marcelo")
 st.write(
     "Aplicativo unificado de controle de créditos, débitos, investimentos e dívidas"
     f" (Competência: **{competencia_selecionada}**)."
 )
 
-# Tratamento flexível para capturar receitas e despesas de lançamentos
 if not df_lancamentos.empty and "valor" in df_lancamentos.columns:
-  df_lancamentos["valor"] = (
-      pd.to_numeric(df_lancamentos["valor"], errors="coerce").fillna(0.0)
-  )
+  df_lancamentos["valor"] = pd.to_numeric(
+      df_lancamentos["valor"], errors="coerce"
+  ).fillna(0.0)
   df_lancamentos["tipo_clean"] = (
       df_lancamentos["tipo"].str.strip().str.lower()
   )
 else:
   df_lancamentos["tipo_clean"] = ""
 
-# Filtrar lançamentos do mês selecionado
 df_lanc_mes = (
     df_lancamentos[
         df_lancamentos["competencia"] == competencia_selecionada
@@ -212,6 +193,15 @@ df_lanc_mes = (
     if not df_lancamentos.empty
     else pd.DataFrame()
 )
+
+# ORDENAR PURAMENTE PELA DATA DO LANÇAMENTO (Estilo Extrato Bancário)
+if not df_lanc_mes.empty and "data" in df_lanc_mes.columns:
+  df_lanc_mes["_temp_dt"] = pd.to_datetime(
+      df_lanc_mes["data"], format="%d/%m/%Y", errors="coerce"
+  )
+  df_lanc_mes = df_lanc_mes.sort_values(by="_temp_dt", ascending=True).drop(
+      columns=["_temp_dt"]
+  )
 
 total_receitas_mes = (
     df_lanc_mes[
@@ -231,7 +221,6 @@ total_gastos_mes = (
     else 0.0
 )
 
-# Aportes específicos do mês selecionado
 df_aportes_mes = (
     df_aportes[df_aportes["competencia"] == competencia_selecionada].copy()
     if not df_aportes.empty
@@ -242,9 +231,7 @@ total_aportes_mes = (
 )
 
 
-# --- CÁLCULO INTELIGENTE DE SALDO REMANESCENTE ACUMULADO ---
 def calcular_saldo_ate_competencia(df_lan, df_ap, ordem_alvo):
-  """Calcula o saldo acumulado de todas as competências anteriores à selecionada."""
   try:
     todas_ordens = sorted(
         list(
@@ -292,7 +279,6 @@ saldo_remanescente_anterior = calcular_saldo_ate_competencia(
     df_lancamentos, df_aportes, ordem_selecionada
 )
 
-# Saldo Atual do Mês = Saldo Anterior + Receitas do Mês - Gastos do Mês - Aportes do Mês
 saldo_mes = (
     saldo_remanescente_anterior
     + total_receitas_mes
@@ -335,7 +321,6 @@ df_gastos_grafico = (
     else pd.DataFrame()
 )
 
-# Integrando os aportes do mês como fatias de investimento nos gráficos globais
 if not df_aportes_mes.empty:
   df_ap_graf = pd.DataFrame()
   df_ap_graf["categoria"] = ["Investimento / Aporte"] * len(df_aportes_mes)
@@ -393,8 +378,9 @@ df_creditos_mes = (
     else pd.DataFrame()
 )
 
-if not df_creditos_mes.empty and "id" in df_creditos_mes.columns:
+if not df_creditos_mes.empty:
   for col_aux in [
+      "id",
       "tipo",
       "tipo_clean",
       "competencia",
@@ -405,7 +391,7 @@ if not df_creditos_mes.empty and "id" in df_creditos_mes.columns:
     if col_aux in df_creditos_mes.columns:
       df_creditos_mes = df_creditos_mes.drop(columns=[col_aux])
   df_creditos_mes["valor"] = df_creditos_mes["valor"].apply(fmt_moeda)
-  st.dataframe(df_creditos_mes.set_index("id"), use_container_width=True)
+  st.dataframe(df_creditos_mes, use_container_width=True, hide_index=True)
 else:
   st.info("Nenhum crédito registrado nesta competência.")
 
@@ -419,8 +405,9 @@ df_debitos_mes = (
     else pd.DataFrame()
 )
 
-if not df_debitos_mes.empty and "id" in df_debitos_mes.columns:
+if not df_debitos_mes.empty:
   for col_aux in [
+      "id",
       "tipo",
       "tipo_clean",
       "competencia",
@@ -431,10 +418,9 @@ if not df_debitos_mes.empty and "id" in df_debitos_mes.columns:
     if col_aux in df_debitos_mes.columns:
       df_debitos_mes = df_debitos_mes.drop(columns=[col_aux])
   df_debitos_mes["valor"] = df_debitos_mes["valor"].apply(fmt_moeda)
-  st.dataframe(df_debitos_mes.set_index("id"), use_container_width=True)
+  st.dataframe(df_debitos_mes, use_container_width=True, hide_index=True)
 else:
   st.info("Nenhum débito registrado nesta competência.")
-
 
 # --- SEÇÃO DE GESTÃO DE DÍVIDAS ---
 st.divider()
@@ -443,7 +429,9 @@ st.subheader("💳 Gestão e Controle de Dívidas")
 if not df_dividas.empty:
   df_dividas_fmt = df_dividas.copy()
   if "valor_total" in df_dividas_fmt.columns:
-    df_dividas_fmt["valor_total"] = df_dividas_fmt["valor_total"].apply(fmt_moeda)
+    df_dividas_fmt["valor_total"] = df_dividas_fmt["valor_total"].apply(
+        fmt_moeda
+    )
   if "juros_mensal" in df_dividas_fmt.columns:
     df_dividas_fmt["juros_mensal"] = df_dividas_fmt["juros_mensal"].apply(
         lambda x: f"{float(x):.2f}%" if pd.notna(x) else "0.00%"
@@ -451,7 +439,6 @@ if not df_dividas.empty:
   st.dataframe(df_dividas_fmt.set_index("id"), use_container_width=True)
 else:
   st.info("Nenhuma dívida registada no sistema.")
-
 
 # --- SEÇÃO DE BALANCETE COMPARATIVO MÊS A MÊS ---
 st.divider()
@@ -524,7 +511,6 @@ if todas_ordens:
     acum_saldo_loop = saldo_final_c
 
   df_resumo_mensal = pd.DataFrame(dados_balancete)
-
   df_resumo_formatado = df_resumo_mensal.drop(columns=["_ordem"]).copy()
   for col in [
       "Saldo Anterior",
@@ -538,5 +524,6 @@ if todas_ordens:
   st.dataframe(df_resumo_formatado, use_container_width=True)
 else:
   st.info(
-      "Ainda não há dados suficientes para gerar o balancete comparativo mensal."
+      "Ainda não há dados suficientes para gerar o balancete comparativo"
+      " mensal."
   )
