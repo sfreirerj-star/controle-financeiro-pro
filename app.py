@@ -22,6 +22,7 @@ def obter_conexao():
 st.markdown(
     """
     <style>
+    /* Corrige o fundo branco e invisível no telemóvel */
     @media (max-width: 768px) {
         /* Ajusta o tamanho do texto dos cartões métricos em telemóveis */
         div[data-testid="stMetricValue"] {
@@ -30,12 +31,19 @@ st.markdown(
         div[data-testid="stMetricLabel"] {
             font-size: 0.9rem !important;
         }
+        
+        /* Garante legibilidade e visibilidade nos blocos e menus */
+        .stApp {
+            background-color: inherit;
+        }
+        section[data-testid="stSidebar"] {
+            background-color: inherit;
+        }
     }
     </style>
 """,
     unsafe_allow_html=True,
 )
-
 
 # Inicialização segura dos DataFrames
 df_lancamentos = pd.DataFrame(
