@@ -1,5 +1,9 @@
 import pandas as pd
 import streamlit as st
+from utils import aplicar_estilo_moderno
+
+st.set_page_config(page_title="Título da Página", layout="wide")
+aplicar_estilo_moderno()  # <-- Essencial em cada página
 
 st.set_page_config(
     page_title="Simulador & Melhores Ações - Painel do Marcelo",

@@ -1,9 +1,13 @@
 from datetime import datetime
 import pandas as pd
 import psycopg2
-import streamlit as st
 import os
 import sys
+import streamlit as st
+from utils import aplicar_estilo_moderno
+
+st.set_page_config(page_title="Título da Página", layout="wide")
+aplicar_estilo_moderno()  # <-- Essencial em cada página
 
 # Adiciona a pasta raiz ao caminho do Python para conseguir importar o database.py
 sys.path.append(

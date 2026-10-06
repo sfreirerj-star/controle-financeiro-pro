@@ -4,6 +4,10 @@ import urllib.parse
 import pandas as pd
 import psycopg2
 import streamlit as st
+from utils import aplicar_estilo_moderno
+
+st.set_page_config(page_title="Título da Página", layout="wide")
+aplicar_estilo_moderno()  # <-- Essencial em cada página
 
 # 1. Configuração da página DEVE ser a primeira chamada do Streamlit
 st.set_page_config(
