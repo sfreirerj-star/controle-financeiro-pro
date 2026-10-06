@@ -22,17 +22,25 @@ def obter_conexao():
 st.markdown(
     """
     <style>
-    /* Corrige o fundo branco e invisível no telemóvel */
+    /* Ajustes específicos para telemóveis e telas pequenas */
     @media (max-width: 768px) {
-        /* Ajusta o tamanho do texto dos cartões métricos em telemóveis */
+        /* Transforma colunas múltiplas em blocos empilhados para não espremer os cartões */
+        [data-testid="column"] {
+            width: 100% !important;
+            flex: 1 1 100% !important;
+            min-width: 100% !important;
+            margin-bottom: 1rem;
+        }
+        
+        /* Ajusta o tamanho do texto dos cartões métricos */
         div[data-testid="stMetricValue"] {
-            font-size: 1.2rem !important;
+            font-size: 1.3rem !important;
         }
         div[data-testid="stMetricLabel"] {
             font-size: 0.9rem !important;
         }
         
-        /* Garante legibilidade e visibilidade nos blocos e menus */
+        /* Garante visibilidade correta e evita fundos brancos invisíveis */
         .stApp {
             background-color: inherit;
         }
