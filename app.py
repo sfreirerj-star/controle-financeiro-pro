@@ -17,28 +17,33 @@ def obter_conexao():
   return psycopg2.connect(st.secrets["DATABASE_URL"])
 
 
-# === CSS RESPONSIVO & CORREÇÃO DA TRANSPARÊNCIA DO MENU LATERAL ===
+# === CSS RESPONSIVO & CORREÇÃO DA TRANSPARÊNCIA E TAMANHO DAS MÉTRICAS ===
 st.markdown(
     """
     <style>
-    /* Força o fundo opaco e sólido no menu lateral em celulares e desktops */
+    /* Força opacidade total e fundo sólido em todas as camadas da barra lateral */
+    [data-testid="stSidebar"], 
+    [data-testid="stSidebar"] > div:first-child,
     section[data-testid="stSidebar"] {
-        background-color: var(--background-color, #ffffff) !important;
+        background-color: #FFFFFF !important;
         opacity: 1 !important;
     }
-    section[data-testid="stSidebar"] > div {
-        background-color: inherit !important;
+    
+    [data-testid="stSidebar"] * {
+        background-color: transparent !important;
+        opacity: 1 !important;
     }
 
+    /* Padroniza o tamanho dos números dos cartões/métricas igual ao da outra página */
     @media (max-width: 768px) {
         div[data-testid="stMetricValue"] {
-            font-size: 1.2rem !important;
+            font-size: 1.8rem !important;
         }
         div[data-testid="stMetricLabel"] {
-            font-size: 0.85rem !important;
+            font-size: 0.9rem !important;
         }
         div[data-testid="metric-container"] {
-            padding: 5px !important;
+            padding: 8px !important;
         }
     }
     </style>
