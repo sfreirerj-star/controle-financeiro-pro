@@ -2,6 +2,7 @@ from datetime import datetime
 import pandas as pd
 import streamlit as st
 
+
 def extrair_competencia(data_str):
   try:
     dt = pd.to_datetime(data_str, format="%d/%m/%Y", errors="coerce")
@@ -13,9 +14,8 @@ def extrair_competencia(data_str):
     pass
   return "Indefinido", "9999-99"
 
-def configurar_sidebar_competencia(
-    conexao, prefixo_key="global"
-) -> tuple[str, str]:
+
+def configurar_sidebar_competencia(conexao, prefixo_key="global"):
   mes_atual_sistema = datetime.now().strftime("%m/%Y")
   competencias_disponiveis = [mes_atual_sistema]
   mapeamento_comps = pd.DataFrame(
@@ -91,17 +91,15 @@ def configurar_sidebar_competencia(
 
   return competencia_selecionada, ordem_sel
 
+
 def aplicar_estilo_moderno():
   """Aplica estilos CSS globais com toques de cor personalizados para cada cartão."""
   st.markdown(
       """
         <style>
-            /* Fundo principal mais suave */
             .main {
                 background-color: #f1f5f9;
             }
-            
-            /* Cartões gerais (gráficos e tabelas) */
             div[data-testid="stPlotlyChart"],
             div[data-testid="stDataFrame"] {
                 background: #ffffff;
@@ -111,8 +109,6 @@ def aplicar_estilo_moderno():
                 border: 1px solid #cbd5e1;
                 margin-bottom: 1rem;
             }
-
-            /* Estilo base para todos os cartões de métricas */
             div[data-testid="stMetric"] {
                 background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
                 padding: 1.2rem;
@@ -122,8 +118,6 @@ def aplicar_estilo_moderno():
                 border-left: 5px solid #3b82f6;
                 margin-bottom: 1rem;
             }
-
-            /* Cores específicas baseadas na ordem dos cartões na linha do painel principal */
             div[data-testid="stHorizontalBlock"] > div:nth-child(1) div[data-testid="stMetric"] {
                 border-left-color: #3b82f6;
             }
@@ -139,8 +133,6 @@ def aplicar_estilo_moderno():
             div[data-testid="stHorizontalBlock"] > div:nth-child(5) div[data-testid="stMetric"] {
                 border-left-color: #0284c7;
             }
-
-            /* Botões modernos com cor de destaque */
             .stButton > button {
                 background-color: #2563eb;
                 color: white;
@@ -150,41 +142,20 @@ def aplicar_estilo_moderno():
                 box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
                 transition: all 0.2s ease;
             }
-            
             .stButton > button:hover {
                 background-color: #1d4ed8;
                 transform: translateY(-1px);
                 box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
             }
-
-            /* Títulos e cabeçalhos */
             h1, h2, h3 {
                 color: #1e293b;
                 font-weight: 700;
             }
-
-            /* Barra lateral limpa */
             section[data-testid="stSidebar"] {
                 background-color: #ffffff;
                 border-right: 1px solid #e2e8f0;
             }
-
-                                    /* === AJUSTES RESPONSIVOS PARA TELEMÓVEIS === */
-            @media (max-width: 768px) {
-                /* Força fundo opaco em qualquer elemento dentro da barra lateral e no overlay móvel */
-                section[data-testid="stSidebar"], 
-                section[data-testid="stSidebar"] *, 
-                div[data-baseweb="drawer"] div {
-                    background-color: #ffffff !important;
-                    color: #1e293b !important;
-                }
-
-                /* Ajusta o espaçamento e largura dos cartões no mobile */
-                div[data-testid="stMetric"] {
-                    padding: 0.9rem;
-                }
-                
-                div[data-testid="stMetricValue"] {
-                    font-size: 1.2rem !important;
-                }
-            }
+        </style>
+    """,
+      unsafe_allow_html=True,
+  )
