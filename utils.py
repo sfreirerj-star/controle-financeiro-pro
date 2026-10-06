@@ -169,18 +169,14 @@ def aplicar_estilo_moderno():
                 border-right: 1px solid #e2e8f0;
             }
 
-            /* === AJUSTES RESPONSIVOS PARA TELEMÓVEIS === */
+                        /* === AJUSTES RESPONSIVOS PARA TELEMÓVEIS === */
             @media (max-width: 768px) {
-                /* Força fundo opaco em todas as camadas possíveis da barra lateral */
+                /* Força fundo opaco em qualquer elemento dentro da barra lateral e no overlay móvel */
                 section[data-testid="stSidebar"], 
-                section[data-testid="stSidebar"] > div,
-                div[data-testid="stSidebarNav"] {
+                section[data-testid="stSidebar"] *, 
+                div[data-baseweb="drawer"] div {
                     background-color: #ffffff !important;
-                }
-                
-                /* Garante que o painel escurece ou o overlay do menu sidebar tem fundo sólido */
-                div[data-testid="stSidebarUserContent"] {
-                    background-color: #ffffff !important;
+                    color: #1e293b !important;
                 }
 
                 /* Ajusta o espaçamento e largura dos cartões no mobile */
@@ -192,4 +188,3 @@ def aplicar_estilo_moderno():
                     font-size: 1.2rem !important;
                 }
             }
-
