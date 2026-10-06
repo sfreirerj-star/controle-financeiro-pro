@@ -48,9 +48,9 @@ def carregar_dados():
         df_dividas = pd.read_sql("SELECT * FROM dividas;", con=conn)
         
         try:
-            df_aportes = pd.read_sql("SELECT * FROM desafio_aportes;", con=conn)
+          df_resgates = pd.read_sql_query("SELECT * FROM desafio_resgates", conexao)
         except Exception:
-            df_aportes = pd.DataFrame()
+          df_resgates = pd.DataFrame(columns=["id", "data", "valor", "motivo"])
 
         conn.close()
         return df_lancamentos, df_dividas, df_aportes
@@ -125,13 +125,25 @@ else:
         df_filtrado["tipo"].str.lower() == "despesa"
     ]["valor"].sum()
 
-    # Tratamento de aportes para a reserva de segurança atual
+    # Tratamento de aportes e resgates para a reserva de segurança atual
     total_aportes = 0.0
     if not df_aportes.empty and "valor" in df_aportes.columns:
-        total_aportes = pd.to_numeric(df_aportes["valor"], errors="coerce").fillna(0.0).sum()
+      total_aportes = pd.to_numeric(
+          df_aportes["valor"], errors="coerce"
+      ).fillna(0.0).sum()
 
-    # Saldo atual corrigido descontando as despesas e os aportes realizados
-    saldo_atual = receitas_total - despesas_total - total_aportes
+    total_resgates = 0.0
+    if (
+        "df_resgates" in locals()
+        and not df_resgates.empty
+        and "valor" in df_resgates.columns
+    ):
+      total_resgates = pd.to_numeric(
+          df_resgates["valor"], errors="coerce"
+      ).fillna(0.0).sum()
+
+    # Reserva atual líquida descontando os resgates efetuados
+    reserva_atual_liquida = total_aportes - total_resgates
 
     # Métricas Gerais Atuais com 4 colunas
     st.subheader(f"📊 Panorama Atual ({competencia_selecionada})")
