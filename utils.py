@@ -169,31 +169,22 @@ def aplicar_estilo_moderno():
                 border-right: 1px solid #e2e8f0;
             }
 
-                                    /* === AJUSTES RESPONSIVOS DEFINITIVOS PARA TELEMÓVEIS === */
+                                    /* === AJUSTES RESPONSIVOS PARA TELEMÓVEIS === */
             @media (max-width: 768px) {
-                /* Força fundo branco opaco na gaveta de navegação móvel do Streamlit em todas as páginas */
-                div[data-baseweb="drawer"], 
-                section[data-testid="stSidebar"] > div {
+                /* Força fundo opaco em qualquer elemento dentro da barra lateral e no overlay móvel */
+                section[data-testid="stSidebar"], 
+                section[data-testid="stSidebar"] *, 
+                div[data-baseweb="drawer"] div {
                     background-color: #ffffff !important;
-                }
-                
-                /* Garante que o texto do menu lateral escuro/claro não se misture */
-                section[data-testid="stSidebar"] span, 
-                section[data-testid="stSidebar"] p, 
-                section[data-testid="stSidebar"] div {
                     color: #1e293b !important;
                 }
 
-                /* Mantém os cartões métricos organizados e proporcionais no telemóvel */
+                /* Ajusta o espaçamento e largura dos cartões no mobile */
                 div[data-testid="stMetric"] {
-                    padding: 0.8rem !important;
+                    padding: 0.9rem;
                 }
                 
                 div[data-testid="stMetricValue"] {
-                    font-size: 1.1rem !important;
-                }
-                
-                div[data-testid="stMetricLabel"] {
-                    font-size: 0.8rem !important;
+                    font-size: 1.2rem !important;
                 }
             }
