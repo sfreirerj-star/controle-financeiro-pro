@@ -171,12 +171,18 @@ def aplicar_estilo_moderno():
 
             /* === AJUSTES RESPONSIVOS PARA TELEMÓVEIS === */
             @media (max-width: 768px) {
-                /* Garante opacidade sólida no menu lateral para evitar sobreposição transparente */
-                section[data-testid="stSidebar"] {
+                /* Força fundo opaco em todas as camadas possíveis da barra lateral */
+                section[data-testid="stSidebar"], 
+                section[data-testid="stSidebar"] > div,
+                div[data-testid="stSidebarNav"] {
                     background-color: #ffffff !important;
-                    z-index: 999999 !important;
                 }
                 
+                /* Garante que o painel escurece ou o overlay do menu sidebar tem fundo sólido */
+                div[data-testid="stSidebarUserContent"] {
+                    background-color: #ffffff !important;
+                }
+
                 /* Ajusta o espaçamento e largura dos cartões no mobile */
                 div[data-testid="stMetric"] {
                     padding: 0.9rem;
@@ -186,8 +192,4 @@ def aplicar_estilo_moderno():
                     font-size: 1.2rem !important;
                 }
             }
-        </style>
-    """,
-      unsafe_allow_html=True,
-  )
-  
+
