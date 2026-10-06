@@ -18,6 +18,24 @@ def obter_conexao():
     """Retorna a conexão com a base de dados PostgreSQL centralizada nos secrets."""
     return psycopg2.connect(st.secrets["DATABASE_URL"])
 
+# === COLE AQUI O BLOCO DE CSS RESPONSIVO ===
+st.markdown(
+    """
+    <style>
+    @media (max-width: 768px) {
+        /* Ajusta o tamanho do texto dos cartões métricos em telemóveis */
+        div[data-testid="stMetricValue"] {
+            font-size: 1.2rem !important;
+        }
+        div[data-testid="stMetricLabel"] {
+            font-size: 0.9rem !important;
+        }
+    }
+    </style>
+""",
+    unsafe_allow_html=True,
+)
+
 
 # Inicialização segura dos DataFrames
 df_lancamentos = pd.DataFrame(
