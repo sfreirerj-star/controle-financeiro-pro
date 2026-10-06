@@ -92,7 +92,7 @@ def configurar_sidebar_competencia(
   return competencia_selecionada, ordem_sel
 
 def aplicar_estilo_moderno():
-    """Aplica estilos CSS globais com toque de cor moderno estilo SaaS."""
+    """Aplica estilos CSS globais com toques de cor personalizados para cada cartão."""
     st.markdown("""
         <style>
             /* Fundo principal mais suave */
@@ -100,7 +100,7 @@ def aplicar_estilo_moderno():
                 background-color: #f1f5f9;
             }
             
-            /* Cartões gerais (gráficos, tabelas e blocos) com borda subtil */
+            /* Cartões gerais (gráficos e tabelas) */
             div[data-testid="stPlotlyChart"],
             div[data-testid="stDataFrame"] {
                 background: #ffffff;
@@ -111,29 +111,44 @@ def aplicar_estilo_moderno():
                 margin-bottom: 1rem;
             }
 
-            /* Estilização e cores elegantes para os Cartões de Métricas */
+            /* Estilo base para todos os cartões de métricas */
             div[data-testid="stMetric"] {
                 background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
                 padding: 1.2rem;
                 border-radius: 12px;
                 box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.06);
                 border: 1px solid #e2e8f0;
-                border-left: 5px solid #3b82f6; /* Detalhe colorido azul moderno à esquerda */
+                border-left: 5px solid #3b82f6;
                 margin-bottom: 1rem;
             }
 
-            /* Destaque individual para as métricas-chave se desejar dar mais cor */
-            /* Cartão de Entradas com detalhe verde */
-            div[data-testid="stMetric"]:nth-of-type(2) {
-                border-left-color: #10b981; 
+            /* Cores específicas baseadas na ordem dos cartões na linha do painel principal */
+            /* 1º Cartão (Saldo Anterior) - Azul */
+            div[data-testid="stHorizontalBlock"] > div:nth-child(1) div[data-testid="stMetric"] {
+                border-left-color: #3b82f6;
             }
             
-            /* Cartão de Gastos/Despesas com detalhe vermelho/laranja */
-            div[data-testid="stMetric"]:nth-of-type(3) {
-                border-left-color: #ef4444; 
+            /* 2º Cartão (Entradas) - Verde */
+            div[data-testid="stHorizontalBlock"] > div:nth-child(2) div[data-testid="stMetric"] {
+                border-left-color: #10b981;
+            }
+            
+            /* 3º Cartão (Gastos Comuns) - Vermelho/Laranja */
+            div[data-testid="stHorizontalBlock"] > div:nth-child(3) div[data-testid="stMetric"] {
+                border-left-color: #ef4444;
             }
 
-            /* Botões modernos com cor de destaque (Azul primário) */
+            /* 4º Cartão (Aportes do Mês) - Roxo/Índigo */
+            div[data-testid="stHorizontalBlock"] > div:nth-child(4) div[data-testid="stMetric"] {
+                border-left-color: #8b5cf6;
+            }
+
+            /* 5º Cartão (Saldo Final) - Azul Escuro/Destacado */
+            div[data-testid="stHorizontalBlock"] > div:nth-child(5) div[data-testid="stMetric"] {
+                border-left-color: #0284c7;
+            }
+
+            /* Botões modernos com cor de destaque */
             .stButton > button {
                 background-color: #2563eb;
                 color: white;
@@ -150,13 +165,13 @@ def aplicar_estilo_moderno():
                 box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
             }
 
-            /* Títulos e cabeçalhos com cor mais marcante */
+            /* Títulos e cabeçalhos */
             h1, h2, h3 {
                 color: #1e293b;
                 font-weight: 700;
             }
 
-            /* Barra lateral (Sidebar) limpa */
+            /* Barra lateral limpa */
             section[data-testid="stSidebar"] {
                 background-color: #ffffff;
                 border-right: 1px solid #e2e8f0;
