@@ -102,14 +102,20 @@ def aplicar_estilo_moderno():
                 background-color: #f8fafc;
             }
             
-            /* Transforma os blocos de conteúdo em cartões flutuantes modernos com sombra */
-            div[data-testid="stVerticalBlock"] > div[style*="flex-direction: column;"] > div[data-testid="stVerticalBlock"] {
+            /* Transforma os blocos de conteúdo e métricas em cartões flutuantes modernos com sombra */
+            div[data-testid="stVerticalBlock"] > div[style*="flex-direction: column;"] > div[data-testid="stVerticalBlock"],
+            div[data-testid="stMetric"] {
                 background: #ffffff;
                 padding: 1.2rem;
                 border-radius: 12px;
                 box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.05), 0 2px 4px -2px rgb(0 0 0 / 0.05);
                 border: 1px solid #e2e8f0;
                 margin-bottom: 1rem;
+            }
+
+            /* Ajuste interno para os cartões de métrica ficarem perfeitos */
+            div[data-testid="stMetric"] {
+                padding: 1rem;
             }
 
             /* Botões modernos com bordas arredondadas e efeito hover */
