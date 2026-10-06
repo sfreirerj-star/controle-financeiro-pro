@@ -12,6 +12,24 @@ st.set_page_config(
 
 # Ativa o visual moderno de cartões em toda a página
 aplicar_estilo_moderno()
+st.markdown(
+    """
+    <style>
+    /* Correção dedicada e isolada para o menu lateral no painel principal (app.py) */
+    @media (max-width: 768px) {
+        div[data-baseweb="modal"], div[data-baseweb="drawer"], section[data-testid="stSidebar"] {
+            background-color: #ffffff !important;
+        }
+        
+        /* Garante que as colunas do painel principal empilhem em vez de esmagar os cartões */
+        div[data-testid="stHorizontalBlock"] {
+            flex-direction: column !important;
+        }
+    }
+    </style>
+""",
+    unsafe_allow_html=True,
+)
 
 
 def obter_conexao():
