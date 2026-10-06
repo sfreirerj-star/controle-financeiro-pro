@@ -34,13 +34,13 @@ st.markdown(
         opacity: 1 !important;
     }
 
-    /* Padroniza o tamanho dos números dos cartões/métricas igual ao da outra página */
+    /* Aumenta o tamanho dos números das métricas/cartões no celular para ficarem bem destacados */
     @media (max-width: 768px) {
         div[data-testid="stMetricValue"] {
-            font-size: 1.8rem !important;
+            font-size: 2.1rem !important;
         }
         div[data-testid="stMetricLabel"] {
-            font-size: 0.9rem !important;
+            font-size: 0.95rem !important;
         }
         div[data-testid="metric-container"] {
             padding: 8px !important;
