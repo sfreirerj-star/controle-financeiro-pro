@@ -22,30 +22,20 @@ def obter_conexao():
 st.markdown(
     """
     <style>
-    /* Ajustes específicos para telemóveis e telas pequenas */
+    /* Ajustes limpos para telemóveis */
     @media (max-width: 768px) {
-        /* Transforma colunas múltiplas em blocos empilhados para não espremer os cartões */
-        [data-testid="column"] {
-            width: 100% !important;
-            flex: 1 1 100% !important;
-            min-width: 100% !important;
-            margin-bottom: 1rem;
-        }
-        
-        /* Ajusta o tamanho do texto dos cartões métricos */
+        /* Ajusta o tamanho dos textos dos cartões métricos */
         div[data-testid="stMetricValue"] {
-            font-size: 1.3rem !important;
+            font-size: 1.2rem !important;
         }
         div[data-testid="stMetricLabel"] {
-            font-size: 0.9rem !important;
+            font-size: 0.85rem !important;
         }
         
-        /* Garante visibilidade correta e evita fundos brancos invisíveis */
-        .stApp {
-            background-color: inherit;
-        }
+        /* Garante que o menu lateral tem fundo sólido quando aberto no telemóvel */
         section[data-testid="stSidebar"] {
-            background-color: inherit;
+            background-color: var(--background-color) !important;
+            z-index: 999999 !important;
         }
     }
     </style>
