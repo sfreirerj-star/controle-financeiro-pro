@@ -36,6 +36,7 @@ try:
     conexao.close()
 except Exception as e:
     st.error(f"Erro ao carregar dados do banco local: {e}")
+    st.write(f"🔍 Total de lançamentos carregados do banco: {len(df_lancamentos)}")
     df_lancamentos = pd.DataFrame(columns=["id", "data", "tipo", "categoria", "descricao", "valor"])
     df_aportes = pd.DataFrame(columns=["id", "data", "local_aplicacao", "descricao", "valor"])
     df_dividas = pd.DataFrame(columns=["id", "credor", "valor_total", "juros_mensal", "status"])
