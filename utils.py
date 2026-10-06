@@ -92,8 +92,9 @@ def configurar_sidebar_competencia(
   return competencia_selecionada, ordem_sel
 
 def aplicar_estilo_moderno():
-    """Aplica estilos CSS globais com toques de cor personalizados para cada cartão."""
-    st.markdown("""
+  """Aplica estilos CSS globais com toques de cor personalizados para cada cartão."""
+  st.markdown(
+      """
         <style>
             /* Fundo principal mais suave */
             .main {
@@ -123,27 +124,18 @@ def aplicar_estilo_moderno():
             }
 
             /* Cores específicas baseadas na ordem dos cartões na linha do painel principal */
-            /* 1º Cartão (Saldo Anterior) - Azul */
             div[data-testid="stHorizontalBlock"] > div:nth-child(1) div[data-testid="stMetric"] {
                 border-left-color: #3b82f6;
             }
-            
-            /* 2º Cartão (Entradas) - Verde */
             div[data-testid="stHorizontalBlock"] > div:nth-child(2) div[data-testid="stMetric"] {
                 border-left-color: #10b981;
             }
-            
-            /* 3º Cartão (Gastos Comuns) - Vermelho/Laranja */
             div[data-testid="stHorizontalBlock"] > div:nth-child(3) div[data-testid="stMetric"] {
                 border-left-color: #ef4444;
             }
-
-            /* 4º Cartão (Aportes do Mês) - Roxo/Índigo */
             div[data-testid="stHorizontalBlock"] > div:nth-child(4) div[data-testid="stMetric"] {
                 border-left-color: #8b5cf6;
             }
-
-            /* 5º Cartão (Saldo Final) - Azul Escuro/Destacado */
             div[data-testid="stHorizontalBlock"] > div:nth-child(5) div[data-testid="stMetric"] {
                 border-left-color: #0284c7;
             }
@@ -176,5 +168,26 @@ def aplicar_estilo_moderno():
                 background-color: #ffffff;
                 border-right: 1px solid #e2e8f0;
             }
+
+            /* === AJUSTES RESPONSIVOS PARA TELEMÓVEIS === */
+            @media (max-width: 768px) {
+                /* Garante opacidade sólida no menu lateral para evitar sobreposição transparente */
+                section[data-testid="stSidebar"] {
+                    background-color: #ffffff !important;
+                    z-index: 999999 !important;
+                }
+                
+                /* Ajusta o espaçamento e largura dos cartões no mobile */
+                div[data-testid="stMetric"] {
+                    padding: 0.9rem;
+                }
+                
+                div[data-testid="stMetricValue"] {
+                    font-size: 1.2rem !important;
+                }
+            }
         </style>
-    """, unsafe_allow_html=True)
+    """,
+      unsafe_allow_html=True,
+  )
+  
