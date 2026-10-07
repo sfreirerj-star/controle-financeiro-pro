@@ -21,55 +21,56 @@ def obter_conexao():
 
 
 def buscar_dados_competencia(competencia="10/2026"):
-  """Busca o total de receitas e despesas de uma competência específica."""
+  """Busca e processa os dados reais de lançamentos diretamente do banco PostgreSQL."""
   entradas = 0.0
   gastos_comuns = 0.0
 
   try:
     conn = obter_conexao()
-    cursor = conn.cursor()
-
-    query = """
-            SELECT tipo, SUM(valor) 
-            FROM lancamentos 
-            WHERE competencia = %s 
-            GROUP BY tipo;
-        """
-    cursor.execute(query, (competencia,))
-    resultados = cursor.fetchall()
-
-    for tipo, valor in resultados:
-      if tipo.lower() in [
-          "entrada",
-          "receita",
-          "ganho",
-          "crédito",
-          "credito",
-      ]:
-        entradas = float(valor)
-      elif tipo.lower() in [
-          "despesa",
-          "gasto",
-          "gasto comum",
-          "débito",
-          "debito",
-          "saida",
-      ]:
-        gastos_comuns = float(valor)
-
-    cursor.close()
+    df_l = pd.read_sql_query("SELECT * FROM lancamentos", conn)
     conn.close()
 
-  except Exception:
-    # Fallback de segurança com os valores exatos atualizados do seu extrato (10/2026)
-    st.sidebar.warning(
-        "Conectando ao banco... Usando dados do extrato fixado (10/2026)."
-    )
+    if not df_l.empty and "data" in df_l.columns:
+      # Padroniza a extração de competência exatamente como na sua página principal
+      def extrair_comp(data_str):
+        try:
+          dt = pd.to_datetime(data_str, format="%d/%m/%Y", errors="coerce")
+          if pd.isna(dt):
+            dt = pd.to_datetime(data_str, errors="coerce")
+          if pd.notna(dt):
+            return dt.strftime("%m/%Y")
+        except Exception:
+          pass
+        return "Indefinido"
+
+      df_l["competencia"] = df_l["data"].apply(extrair_comp)
+      df_l["valor_num"] = pd.to_numeric(
+          df_l["valor"], errors="coerce"
+      ).fillna(0.0)
+      df_l["tipo_clean"] = df_l["tipo"].str.strip().str.lower()
+
+      # Filtra apenas para a competência alvo (ex: 10/2026)
+      df_mes = df_l[df_l["competencia"] == competencia]
+
+      if not df_mes.empty:
+        entradas = df_mes[
+            df_mes["tipo_clean"].isin(
+                ["receita", "crédito", "credito", "entrada"]
+            )
+        ]["valor_num"].sum()
+        gastos_comuns = df_mes[
+            df_mes["tipo_clean"].isin(
+                ["despesa", "débito", "debito", "saida"]
+            )
+        ]["valor_num"].sum()
+
+  except Exception as e:
+    st.sidebar.error(f"Erro ao carregar dados do banco: {e}")
+    # Fallback caso ocorra algum imprevisto na conexão
     entradas = 11734.59
     gastos_comuns = 5337.45
 
   return entradas, gastos_comuns
-
 
 # --- EXECUÇÃO PRINCIPAL ---
 competencia_alvo = "10/2026"
