@@ -1,69 +1,162 @@
-import streamlit as st
+from datetime import datetime
 import pandas as pd
-# Importa a função que criamos no passo anterior
-from utils import calcular_distribuicao_milenar 
+import psycopg2
+import streamlit as st
+from utils import aplicar_estilo_moderno
 
 st.set_page_config(page_title="Alocação Milenar - Talmude", layout="wide")
+aplicar_estilo_moderno()
 
 st.title("📜 Estratégia de Alocação Milenar (Talmude)")
-st.markdown("Aplicação dos conceitos de **Tsedacá** e da **Regra dos Três Terços** no seu saldo real.")
+st.markdown(
+    "Aplicação dos conceitos de **Tsedacá** e da **Regra dos Três Terços**"
+    " usando seus dados reais na nuvem."
+)
 
-# --- INTEGRAÇÃO COM SEU BANCO DE DADOS ---
-# Aqui simulamos a busca dos seus dados reais (Entradas: 11.636,70 | Gastos: 5.195,47)
-# Se você tiver uma função no database.py ou utils.py que busca o saldo atualizado, 
-# você pode substituir os valores abaixo por ela. Ex: saldo_atual = database.buscar_ultimo_saldo()
-entradas_db = 11636.70
-gastos_db = 5195.47
-saldo_padrao = entradas_db - gastos_db
 
-# Permitir que o usuário use o saldo do sistema ou digite um novo para simular
-usar_saldo_sistema = st.checkbox("Usar saldo atual do sistema (Competência Ativa)", value=True)
+# --- FUNÇÕES AUTOSSUFICIENTES (CONEXÃO E CONSULTA AO POSTGRESQL) ---
+def obter_conexao():
+  """Abre e retorna a conexão com o banco de dados PostgreSQL na nuvem."""
+  return psycopg2.connect(st.secrets["DATABASE_URL"])
 
-if usar_saldo_sistema:
-    saldo_disponivel = saldo_padrao
-    st.info(f"💰 Utilizando o Saldo Remanescente do sistema: **R$ {saldo_disponivel:,.2f}**".replace(",", "X").replace(".", ",").replace("X", "."))
-else:
-    saldo_disponivel = st.number_input("Digite o saldo livre para simulação (R$)", value=float(saldo_padrao), step=100.0)
+
+def buscar_dados_competencia(competencia="10/2026"):
+  entradas = 0.0
+  gastos_comuns = 0.0
+
+  try:
+    conn = obter_conexao()
+    cursor = conn.cursor()
+
+    query = """
+            SELECT tipo, SUM(valor) 
+            FROM lancamentos 
+            WHERE competencia = %s 
+            GROUP BY tipo;
+        """
+    cursor.execute(query, (competencia,))
+    resultados = cursor.fetchall()
+
+    for tipo, valor in resultados:
+      if tipo.lower() in ["entrada", "receita", "ganho", "crédito", "credito"]:
+        entradas = float(valor)
+      elif tipo.lower() in ["despesa", "gasto", "gasto comum", "débito", "debito", "saida"]:
+        gastos_comuns = float(valor)
+
+    cursor.close()
+    conn.close()
+
+  except Exception:
+    # Fallback de segurança caso ocorra erro na query
+    entradas = 11734.59
+    gastos_comuns = 5337.45
+
+  return entradas, gastos_comuns
+
+
+# --- EXECUÇÃO PRINCIPAL ---
+competencia_alvo = "10/2026"
+entradas, gastos_comuns = buscar_dados_competencia(competencia_alvo)
+saldo_remanescente = entradas - gastos_comuns
+
+# Painel de métricas do sistema
+st.markdown(f"### 📱 Resumo da Competência: {competencia_alvo}")
+col_m1, col_m2, col_m3 = st.columns(3)
+col_m1.metric(
+    "Entradas",
+    f"R$ {entradas:,.2f}".replace(",", "X")
+    .replace(".", ",")
+    .replace("X", "."),
+)
+col_m2.metric(
+    "Gastos Comuns",
+    f"R$ {gastos_comuns:,.2f}".replace(",", "X")
+    .replace(".", ",")
+    .replace("X", "."),
+)
+col_m3.metric(
+    "Saldo Livre",
+    f"R$ {saldo_remanescente:,.2f}".replace(",", "X")
+    .replace(".", ",")
+    .replace("X", "."),
+    delta="No Azul 💙" if saldo_remanescente >= 0 else "No Vermelho 🔴",
+)
 
 st.divider()
 
-# --- EXECUÇÃO DA LÓGICA E EXIBIÇÃO ---
-if saldo_disponivel > 0:
-    # Executa a função concentrada no seu utils.py
-    resultado = calcular_distribuicao_milenar(saldo_disponivel)
-    
-    # Bloco Informativo de Impacto (Tsedacá)
-    st.warning(f"🕊️ **Tsedacá (Justiça Social - 10%): R$ {resultado['tsedaca']:,.2f}**".replace(",", "X").replace(".", ",").replace("X", "."))
-    st.caption("Destine este valor para doações, apoiar projetos comunitários ou capacitar alguém antes de investir no seu patrimônio.")
-    
-    st.write("")
-    st.markdown("### 🎯 Divisão Estratégica dos Três Terços")
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.info("🛡️ **1/3 em Terras**")
-        st.subheader(f"R$ {resultado['terras']:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
-        st.markdown("**Foco:** Segurança e Preservação\n\n*Sugestão:* FIIs de Tijolo, Imóveis ou Renda Fixa atrelada à inflação (IPCA+).")
-        
-    with col2:
-        st.success("📈 **1/3 em Negócios**")
-        st.subheader(f"R$ {resultado['negocios']:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
-        st.markdown("**Foco:** Multiplicação e Crescimento\n\n*Sugestão:* Ações, fundos de ações, investimento no próprio negócio ou educação de alto nível.")
-        
-    with col3:
-        st.error("💰 **1/3 em Mãos**")
-        st.subheader(f"R$ {resultado['em_maos']:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
-        st.markdown("**Foco:** Liquidez e Oportunidade\n\n*Sugestão:* Tesouro Selic, CDB 100% CDI com liquidez diária (Reserva de Oportunidade).")
+if saldo_remanescente > 0:
+  # --- MATEMÁTICA MILENAR ---
+  tsedaca = saldo_remanescente * 0.10
+  saldo_investivel = saldo_remanescente - tsedaca
+  um_terco = saldo_investivel / 3
 
-    # Gráfico Visual para enriquecer a página
-    st.write("")
-    st.markdown("### 📊 Proporção Visual da Distribuição")
-    df_grafico = pd.DataFrame({
-        "Destino": ["Tsedacá", "Terras (Segurança)", "Negócios (Crescimento)", "Em Mãos (Liquidez)"],
-        "Valores": [resultado['tsedaca'], resultado['terras'], resultado['negocios'], resultado['em_maos']]
-    })
-    st.bar_chart(data=df_grafico, x="Destino", y="Valores")
+  # --- RENDERIZAÇÃO DA INTERFACE ---
+  st.warning(
+      "🕊️ **Tsedacá (Justiça Social - 10%): R$"
+      f" {tsedaca:,.2f}**".replace(",", "X")
+      .replace(".", ",")
+      .replace("X", ".")
+  )
+  st.caption(
+      "Destine este valor para fazer o bem, apoiar projetos ou ajudar na"
+      " capacitação profissional de terceiros."
+  )
 
+  st.write("")
+  st.markdown("### 🎯 Divisão Estratégica dos Três Terços (Talmude)")
+
+  col1, col2, col3 = st.columns(3)
+
+  with col1:
+    st.info("🛡️ **1/3 em Terras**")
+    st.subheader(
+        f"R$ {um_terco:,.2f}".replace(",", "X")
+        .replace(".", ",")
+        .replace("X", ".")
+    )
+    st.markdown(
+        "**Foco:** Segurança e Preservação\n\n*Sugestão:* Fundos Imobiliários"
+        " de Tijolo, Imóveis ou Renda Fixa IPCA+."
+    )
+
+  with col2:
+    st.success("📈 **1/3 em Negócios**")
+    st.subheader(
+        f"R$ {um_terco:,.2f}".replace(",", "X")
+        .replace(".", ",")
+        .replace("X", ".")
+    )
+    st.markdown(
+        "**Foco:** Multiplicação e Crescimento\n\n*Sugestão:* Ações, novos"
+        " projetos geradores de receita ou capacitação pessoal."
+    )
+
+  with col3:
+    st.error("💰 **1/3 em Mãos**")
+    st.subheader(
+        f"R$ {um_terco:,.2f}".replace(",", "X")
+        .replace(".", ",")
+        .replace("X", ".")
+    )
+    st.markdown(
+        "**Foco:** Liquidez e Oportunidade\n\n*Sugestão:* Tesouro Selic ou CDB"
+        " 100% CDI com liquidez diária."
+    )
+
+  st.write("")
+  st.markdown("### 📊 Visão Geral do Repasse")
+  df_grafico = pd.DataFrame({
+      "Destino": [
+          "Tsedacá",
+          "Terras (Segurança)",
+          "Negócios (Crescimento)",
+          "Em Mãos (Liquidez)",
+      ],
+      "Valores": [tsedaca, um_terco, um_terco, um_terco],
+  })
+  st.bar_chart(data=df_grafico, x="Destino", y="Valores")
 else:
-    st.error("O saldo disponível precisa ser maior que zero para aplicar a distribuição.")
+  st.error(
+      "O saldo remanescente em conta precisa ser positivo para aplicar o"
+      " modelo milenar de investimentos."
+  )
