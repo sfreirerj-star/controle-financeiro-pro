@@ -5,7 +5,7 @@ import streamlit as st
 from utils import aplicar_estilo_moderno
 
 st.set_page_config(page_title="Alocação Milenar - Talmude", layout="wide")
-aplicar_estilo_moderno()
+aplicar_estilo_moderno()  # <-- Essencial para manter o menu opaco igual às outras páginas
 
 st.title("📜 Estratégia de Alocação Milenar (Talmude)")
 st.markdown(
@@ -21,6 +21,7 @@ def obter_conexao():
 
 
 def buscar_dados_competencia(competencia="10/2026"):
+  """Busca o total de receitas e despesas de uma competência específica."""
   entradas = 0.0
   gastos_comuns = 0.0
 
@@ -38,16 +39,32 @@ def buscar_dados_competencia(competencia="10/2026"):
     resultados = cursor.fetchall()
 
     for tipo, valor in resultados:
-      if tipo.lower() in ["entrada", "receita", "ganho", "crédito", "credito"]:
+      if tipo.lower() in [
+          "entrada",
+          "receita",
+          "ganho",
+          "crédito",
+          "credito",
+      ]:
         entradas = float(valor)
-      elif tipo.lower() in ["despesa", "gasto", "gasto comum", "débito", "debito", "saida"]:
+      elif tipo.lower() in [
+          "despesa",
+          "gasto",
+          "gasto comum",
+          "débito",
+          "debito",
+          "saida",
+      ]:
         gastos_comuns = float(valor)
 
     cursor.close()
     conn.close()
 
   except Exception:
-    # Fallback de segurança caso ocorra erro na query
+    # Fallback de segurança com os valores exatos atualizados do seu extrato (10/2026)
+    st.sidebar.warning(
+        "Conectando ao banco... Usando dados do extrato fixado (10/2026)."
+    )
     entradas = 11734.59
     gastos_comuns = 5337.45
 
@@ -85,7 +102,7 @@ col_m3.metric(
 st.divider()
 
 if saldo_remanescente > 0:
-  # --- MATEMÁTICA MILENAR ---
+  # --- MATEMÁTICA MILENAR (AUTOSSUFICIENTE NA PÁGINA) ---
   tsedaca = saldo_remanescente * 0.10
   saldo_investivel = saldo_remanescente - tsedaca
   um_terco = saldo_investivel / 3
@@ -143,6 +160,7 @@ if saldo_remanescente > 0:
         " 100% CDI com liquidez diária."
     )
 
+  # Elemento Gráfico Complementar
   st.write("")
   st.markdown("### 📊 Visão Geral do Repasse")
   df_grafico = pd.DataFrame({
@@ -155,6 +173,7 @@ if saldo_remanescente > 0:
       "Valores": [tsedaca, um_terco, um_terco, um_terco],
   })
   st.bar_chart(data=df_grafico, x="Destino", y="Valores")
+
 else:
   st.error(
       "O saldo remanescente em conta precisa ser positivo para aplicar o"
