@@ -54,7 +54,7 @@ df_lancamentos = pd.DataFrame(
     columns=["data", "tipo", "categoria", "descricao", "valor"]
 )
 df_aportes = pd.DataFrame(columns=["data", "valor", "local_aplicacao"])
-df_resgates = pd.DataFrame(columns=["data", "valor_resgatado"])
+df_resgates = pd.DataFrame(columns=["data", "valor", "local_origem"])
 df_dividas = pd.DataFrame(
     columns=["credor", "valor_total", "juros_mensal", "status"]
 )
@@ -82,9 +82,11 @@ try:
     except Exception:
       conexao.rollback()
 
-  # 3. Carregar Resgates (Lê diretamente a coluna 'valor_resgatado' ou 'valor')
+  # 3. Carregar Resgates da Tabela Oficial 'desafio_resgates'
   try:
-    df_resgates = pd.read_sql_query("SELECT * FROM resgates", conexao)
+    df_resgates = pd.read_sql_query(
+        "SELECT id, data, valor, local_origem, motivo FROM desafio_resgates", conexao
+    )
   except Exception:
     conexao.rollback()
 
@@ -107,26 +109,16 @@ if not df_aportes.empty and "valor" in df_aportes.columns:
 else:
   total_aportes_geral = 0.0
 
-# Tratamento e soma total acumulada dos resgates (Mapeamento explícito da coluna do Supabase)
-if not df_resgates.empty:
-  col_resgate = None
-  for c in ["valor_resgatado", "valor", "valor_num"]:
-    if c in df_resgates.columns:
-      col_resgate = c
-      break
-
-  if col_resgate:
-    df_resgates["valor_num"] = pd.to_numeric(
-        df_resgates[col_resgate], errors="coerce"
-    ).fillna(0.0)
-  else:
-    df_resgates["valor_num"] = 0.0
-
+# Tratamento e soma total acumulada dos resgates
+if not df_resgates.empty and "valor" in df_resgates.columns:
+  df_resgates["valor_num"] = pd.to_numeric(
+      df_resgates["valor"], errors="coerce"
+  ).fillna(0.0)
   total_resgates_geral = df_resgates["valor_num"].sum()
 else:
   total_resgates_geral = 0.0
 
-# PATRIMÔNIO LÍQUIDO GUARDADO ACUMULADO (Aportes Totais - Resgates Totais)
+# PATRIMÔNIO LÍQUIDO GUARDADO REAL (Aportes Totais - Resgates Totais)
 patrimonio_liquido_guardado = total_aportes_geral - total_resgates_geral
 
 
@@ -179,7 +171,7 @@ else:
 mapeamento_comps = pd.concat([
     df_lancamentos[["competencia", "comp_ordem"]],
     df_aportes[["competencia", "comp_ordem"]],
-    df_resgates[["competencia", "comp_ordem"]],
+    df_resgates[["competencia", "comp_ordem"]] if not df_resgates.empty else pd.DataFrame(columns=["competencia", "comp_ordem"]),
 ]).drop_duplicates()
 
 mapeamento_comps = mapeamento_comps[
@@ -209,14 +201,6 @@ ordem_selecionada = (
     if competencia_selecionada in mapeamento_comps["competencia"].values
     else datetime.now().strftime("%Y-%m")
 )
-# DIAGNÓSTICO TEMPORÁRIO DE RESGATES
-try:
-  conn = obter_conexao()
-  df_diag = pd.read_sql_query("SELECT * FROM resgates LIMIT 5", conn)
-  conn.close()
-  st.write("🔍 **Estrutura da tabela de resgates:**", df_diag)
-except Exception as err:
-  st.error(f"Erro ao ler tabela resgates: {err}")
 
 # --- CORPO DA PÁGINA PRINCIPAL ---
 st.title("💰 Controle Financeiro — Painel do Marcelo")
@@ -276,19 +260,18 @@ df_aportes_mes = (
     else pd.DataFrame()
 )
 total_aportes_mes = (
-    df_aportes_mes["valor_num"].sum() if not df_aportes_mes.empty else 0.0
+    df_aportes_mes["valor_num"].sum() if not df_aportes_mes.empty and "valor_num" in df_aportes_mes.columns else 0.0
 )
 
 df_resgates_mes = (
     df_resgates[df_resgates["competencia"] == competencia_selecionada].copy()
-    if not df_resgates.empty
+    if not df_resgates.empty and "competencia" in df_resgates.columns
     else pd.DataFrame()
 )
 total_resgates_mes = (
-    df_resgates_mes["valor_num"].sum() if not df_resgates_mes.empty else 0.0
+    df_resgates_mes["valor_num"].sum() if not df_resgates_mes.empty and "valor_num" in df_resgates_mes.columns else 0.0
 )
 
-# Impacto no caixa do mês (Aportes saem do caixa, Resgates voltam para o caixa)
 impacto_investimentos_mes = total_aportes_mes - total_resgates_mes
 
 
@@ -303,9 +286,7 @@ def calcular_saldo_ate_competencia(df_lan, df_ap, df_res, ordem_alvo):
                 + df_ap[df_ap["comp_ordem"] != "9999-99"][
                     "comp_ordem"
                 ].unique().tolist()
-                + df_res[df_res["comp_ordem"] != "9999-99"][
-                    "comp_ordem"
-                ].unique().tolist()
+                + (df_res[df_res["comp_ordem"] != "9999-99"]["comp_ordem"].unique().tolist() if not df_res.empty and "comp_ordem" in df_res.columns else [])
             )
         )
     )
@@ -331,11 +312,11 @@ def calcular_saldo_ate_competencia(df_lan, df_ap, df_res, ordem_alvo):
 
         apo_c = (
             df_ap[df_ap["comp_ordem"] == ord_comp]["valor_num"].sum()
-            if not df_ap.empty else 0.0
+            if not df_ap.empty and "valor_num" in df_ap.columns else 0.0
         )
         res_c = (
             df_res[df_res["comp_ordem"] == ord_comp]["valor_num"].sum()
-            if not df_res.empty else 0.0
+            if not df_res.empty and "valor_num" in df_res.columns else 0.0
         )
 
         saldo_acumulado += rec - gas - (apo_c - res_c)
@@ -363,7 +344,7 @@ col1.metric("Saldo Anterior", fmt_moeda(saldo_remanescente_anterior))
 col2.metric("Entradas", fmt_moeda(total_receitas_mes))
 col3.metric("Gastos Comuns", fmt_moeda(total_gastos_mes))
 
-# 4º CARTÃO: Exibe o Patrimônio Líquido Guardado Total (Aportes Totais - Resgates Totais)
+# 4º CARTÃO: Exibe o Patrimônio Líquido Guardado Real (Aportes Totais - Resgates Totais)
 col4.metric(
     "Patrimônio Guardado",
     fmt_moeda(patrimonio_liquido_guardado),
@@ -382,11 +363,11 @@ else:
       delta_color="inverse",
   )
 
-# Banner informativo detalhando o saldo líquido
+# Banner descritivo atualizado com os resgates corretos da tabela desafio_resgates
 st.info(
-    f"💡 **Patrimônio Guardado Real:** Total Aportado: **{fmt_moeda(total_aportes_geral)}** | "
-    f"Total Resgatado: **{fmt_moeda(total_resgates_geral)}** | "
-    f"Saldo Investido Atual: **{fmt_moeda(patrimonio_liquido_guardado)}**"
+    f"💡 **Detalhamento da Reserva:** Total Aportado Histórico: **{fmt_moeda(total_aportes_geral)}** | "
+    f"Total Resgatado Histórico: **{fmt_moeda(total_resgates_geral)}** | "
+    f"Saldo Guardado Atual: **{fmt_moeda(patrimonio_liquido_guardado)}**"
 )
 
 st.divider()
@@ -403,7 +384,7 @@ df_gastos_grafico = (
     else pd.DataFrame()
 )
 
-if not df_aportes_mes.empty:
+if not df_aportes_mes.empty and "valor_num" in df_aportes_mes.columns:
   df_ap_graf = pd.DataFrame()
   df_ap_graf["categoria"] = ["Investimento / Aporte"] * len(df_aportes_mes)
   df_ap_graf["valor"] = df_aportes_mes["valor_num"]
@@ -535,9 +516,7 @@ todas_ordens = sorted(
             + df_aportes[df_aportes["comp_ordem"] != "9999-99"][
                 "comp_ordem"
             ].unique().tolist()
-            + df_resgates[df_resgates["comp_ordem"] != "9999-99"][
-                "comp_ordem"
-            ].unique().tolist()
+            + (df_resgates[df_resgates["comp_ordem"] != "9999-99"]["comp_ordem"].unique().tolist() if not df_resgates.empty and "comp_ordem" in df_resgates.columns else [])
         )
     )
 )
@@ -578,11 +557,11 @@ if todas_ordens:
 
     apo_c = (
         df_aportes[df_aportes["comp_ordem"] == ord_comp]["valor_num"].sum()
-        if not df_aportes.empty else 0.0
+        if not df_aportes.empty and "valor_num" in df_aportes.columns else 0.0
     )
     res_c = (
         df_resgates[df_resgates["comp_ordem"] == ord_comp]["valor_num"].sum()
-        if not df_resgates.empty else 0.0
+        if not df_resgates.empty and "valor_num" in df_resgates.columns else 0.0
     )
 
     investimento_liquido_c = apo_c - res_c
