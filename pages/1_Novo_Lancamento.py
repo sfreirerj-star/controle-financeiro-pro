@@ -198,12 +198,11 @@ with st.form("form_novo_lancamento", clear_on_submit=True):
 
 st.divider()
 
-# Carregamento robusto dos dados (Lançamentos, Aportes e Resgates)
+# Carregamento robusto dos dados (Lançamentos e Aportes)
 df_lancamentos = pd.DataFrame(
     columns=["id", "data", "tipo", "categoria", "descricao", "valor"]
 )
 df_aportes = pd.DataFrame(columns=["id", "data", "valor", "local_aplicacao"])
-df_resgates = pd.DataFrame(columns=["id", "data", "valor", "local_origem", "motivo"])
 
 try:
   conexao = obter_conexao()
@@ -217,13 +216,6 @@ try:
   try:
     df_aportes = pd.read_sql_query(
         "SELECT id, data, valor, local_aplicacao FROM desafio_aportes", conexao
-    )
-  except Exception:
-    conexao.rollback()
-
-  try:
-    df_resgates = pd.read_sql_query(
-        "SELECT id, data, valor, local_origem, motivo FROM desafio_resgates", conexao
     )
   except Exception:
     conexao.rollback()
@@ -256,17 +248,6 @@ if not df_aportes.empty and "data" in df_aportes.columns:
 else:
   total_aportes_mes = 0.0
 
-# Tratamento dos Resgates na competência (para unificar na visão de Lançamentos)
-if not df_resgates.empty and "data" in df_resgates.columns:
-  res_resg = df_resgates["data"].apply(extrair_competencia)
-  df_resgates["competencia"] = [x[0] for x in res_resg]
-  df_resgates["valor_num"] = pd.to_numeric(
-      df_resgates["valor"], errors="coerce"
-  ).fillna(0.0)
-  df_resgates_mes = df_resgates[df_resgates["competencia"] == competencia_selecionada]
-else:
-  df_resgates_mes = pd.DataFrame()
-
 # Filtrar lançamentos da competência selecionada
 if not df_lancamentos.empty:
   df_lanc_mes = df_lancamentos[
@@ -274,27 +255,6 @@ if not df_lancamentos.empty:
   ].copy()
 else:
   df_lanc_mes = pd.DataFrame(columns=df_lancamentos.columns)
-
-# Se houver resgates e eles ainda não estiverem na tabela de lançamentos, concatena para exibição consolidada
-if not df_resgates_mes.empty:
-  df_resg_conv = pd.DataFrame({
-      "id": [f"RESG-{r_id}" for r_id in df_resgates_mes["id"]],
-      "data": df_resgates_mes["data"],
-      "tipo": ["Receita"] * len(df_resgates_mes),
-      "categoria": ["Resgate"] * len(df_resgates_mes),
-      "descricao": [f"Resgate {loc}" for loc in df_resgates_mes["local_origem"]],
-      "valor": df_resgates_mes["valor"],
-      "competencia": df_resgates_mes["competencia"],
-      "valor_num": df_resgates_mes["valor_num"],
-      "tipo_clean": ["receita"] * len(df_resgates_mes)
-  })
-  
-  # Evita duplicar caso o resgate já tenha sido gravado diretamente em 'lancamentos'
-  resgates_existentes_desc = df_lanc_mes[df_lanc_mes["categoria"] == "Resgate"]["descricao"].tolist() if not df_lanc_mes.empty else []
-  df_resg_conv = df_resg_conv[~df_resg_conv["descricao"].isin(resgates_existentes_desc)]
-  
-  if not df_resg_conv.empty:
-    df_lanc_mes = pd.concat([df_lanc_mes, df_resg_conv], ignore_index=True)
 
 total_receitas = (
     df_lanc_mes[
