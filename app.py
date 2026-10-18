@@ -21,7 +21,6 @@ def obter_conexao():
 st.markdown(
     """
     <style>
-    /* Força opacidade total e fundo sólido em todas as camadas da barra lateral */
     [data-testid="stSidebar"], 
     [data-testid="stSidebar"] > div:first-child,
     section[data-testid="stSidebar"] {
@@ -34,7 +33,6 @@ st.markdown(
         opacity: 1 !important;
     }
 
-    /* Aumenta o tamanho dos números das métricas/cartões no celular para ficarem bem destacados */
     @media (max-width: 768px) {
         div[data-testid="stMetricValue"] {
             font-size: 2.1rem !important;
@@ -56,7 +54,7 @@ df_lancamentos = pd.DataFrame(
     columns=["data", "tipo", "categoria", "descricao", "valor"]
 )
 df_aportes = pd.DataFrame(columns=["data", "valor", "local_aplicacao"])
-df_resgates = pd.DataFrame(columns=["data", "valor", "instituicao_origem"])
+df_resgates = pd.DataFrame(columns=["data", "valor_resgatado"])
 df_dividas = pd.DataFrame(
     columns=["credor", "valor_total", "juros_mensal", "status"]
 )
@@ -84,7 +82,7 @@ try:
     except Exception:
       conexao.rollback()
 
-  # 3. Carregar Resgates (Busca flexível e tolerante a nomes de colunas)
+  # 3. Carregar Resgates (Lê diretamente a coluna 'valor_resgatado' ou 'valor')
   try:
     df_resgates = pd.read_sql_query("SELECT * FROM resgates", conexao)
   except Exception:
@@ -100,7 +98,7 @@ try:
 except Exception as e:
   st.sidebar.error(f"Erro geral de conexão com o banco na nuvem: {e}")
 
-# Tratamento e soma segura dos aportes
+# Tratamento e soma total acumulada dos aportes
 if not df_aportes.empty and "valor" in df_aportes.columns:
   df_aportes["valor_num"] = pd.to_numeric(
       df_aportes["valor"], errors="coerce"
@@ -109,17 +107,17 @@ if not df_aportes.empty and "valor" in df_aportes.columns:
 else:
   total_aportes_geral = 0.0
 
-# Tratamento e soma segura dos resgates (Mapeamento inteligente da coluna de valor)
+# Tratamento e soma total acumulada dos resgates (Mapeamento explícito da coluna do Supabase)
 if not df_resgates.empty:
-  col_val_resg = None
-  for col in ["valor", "valor_resgatado", "valor_num"]:
-    if col in df_resgates.columns:
-      col_val_resg = col
+  col_resgate = None
+  for c in ["valor_resgatado", "valor", "valor_num"]:
+    if c in df_resgates.columns:
+      col_resgate = c
       break
-  
-  if col_val_resg:
+
+  if col_resgate:
     df_resgates["valor_num"] = pd.to_numeric(
-        df_resgates[col_val_resg], errors="coerce"
+        df_resgates[col_resgate], errors="coerce"
     ).fillna(0.0)
   else:
     df_resgates["valor_num"] = 0.0
@@ -128,8 +126,8 @@ if not df_resgates.empty:
 else:
   total_resgates_geral = 0.0
 
-# Patrimônio Líquido Acumulado Real (Aportes Totais - Resgates Totais)
-patrimonio_guardado_total = total_aportes_geral - total_resgates_geral
+# PATRIMÔNIO LÍQUIDO GUARDADO ACUMULADO (Aportes Totais - Resgates Totais)
+patrimonio_liquido_guardado = total_aportes_geral - total_resgates_geral
 
 
 def fmt_moeda(valor):
@@ -237,7 +235,6 @@ df_lanc_mes = (
     else pd.DataFrame()
 )
 
-# ORDENAR PURAMENTE PELA DATA DO LANÇAMENTO (Estilo Extrato Bancário)
 if not df_lanc_mes.empty and "data" in df_lanc_mes.columns:
   df_lanc_mes["_temp_dt"] = pd.to_datetime(
       df_lanc_mes["data"], format="%d/%m/%Y", errors="coerce"
@@ -283,7 +280,7 @@ total_resgates_mes = (
     df_resgates_mes["valor_num"].sum() if not df_resgates_mes.empty else 0.0
 )
 
-# Impacto líquido no caixa do mês: Aportes tiram dinheiro do caixa (+), Resgates devolvem ao caixa (-)
+# Impacto no caixa do mês (Aportes saem do caixa, Resgates voltam para o caixa)
 impacto_investimentos_mes = total_aportes_mes - total_resgates_mes
 
 
@@ -323,7 +320,7 @@ def calcular_saldo_ate_competencia(df_lan, df_ap, df_res, ordem_alvo):
                 )
             )
         ]["valor"].sum()
-        
+
         apo_c = (
             df_ap[df_ap["comp_ordem"] == ord_comp]["valor_num"].sum()
             if not df_ap.empty else 0.0
@@ -332,7 +329,7 @@ def calcular_saldo_ate_competencia(df_lan, df_ap, df_res, ordem_alvo):
             df_res[df_res["comp_ordem"] == ord_comp]["valor_num"].sum()
             if not df_res.empty else 0.0
         )
-        
+
         saldo_acumulado += rec - gas - (apo_c - res_c)
     return saldo_acumulado
   except Exception:
@@ -358,13 +355,12 @@ col1.metric("Saldo Anterior", fmt_moeda(saldo_remanescente_anterior))
 col2.metric("Entradas", fmt_moeda(total_receitas_mes))
 col3.metric("Gastos Comuns", fmt_moeda(total_gastos_mes))
 
-label_aporte_card = "Aportes do Mês"
-valor_aporte_card = total_aportes_mes
-if total_resgates_mes > 0:
-  label_aporte_card = "Aportes / Resgates"
-  valor_aporte_card = total_aportes_mes - total_resgates_mes
-
-col4.metric(label_aporte_card, fmt_moeda(valor_aporte_card))
+# 4º CARTÃO: Exibe o Patrimônio Líquido Guardado Total (Aportes Totais - Resgates Totais)
+col4.metric(
+    "Patrimônio Guardado",
+    fmt_moeda(patrimonio_liquido_guardado),
+    delta="Líquido Investido"
+)
 
 if saldo_mes >= 0:
   col5.metric(
@@ -378,10 +374,11 @@ else:
       delta_color="inverse",
   )
 
-# Mensagem em azul com o cálculo exato do Patrimônio Guardado Acumulado
+# Banner informativo detalhando o saldo líquido
 st.info(
-    f"💡 **Patrimônio Total Guardado (Acumulado Geral):** {fmt_moeda(patrimonio_guardado_total)} "
-    f"(Total Aportado: {fmt_moeda(total_aportes_geral)} | Total Resgatado: {fmt_moeda(total_resgates_geral)})"
+    f"💡 **Patrimônio Guardado Real:** Total Aportado: **{fmt_moeda(total_aportes_geral)}** | "
+    f"Total Resgatado: **{fmt_moeda(total_resgates_geral)}** | "
+    f"Saldo Investido Atual: **{fmt_moeda(patrimonio_liquido_guardado)}**"
 )
 
 st.divider()
