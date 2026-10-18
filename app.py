@@ -288,8 +288,8 @@ total_resgates_mes = (
     df_resgates_mes["valor_num"].sum() if not df_resgates_mes.empty and "valor_num" in df_resgates_mes.columns else 0.0
 )
 
-impacto_investimentos_mes = total_aportes_mes - total_resgates_mes
-
+# O impacto no caixa do mês é apenas o dinheiro que efetivamente saiu para aportes novos
+impacto_investimentos_mes = total_aportes_mes
 
 def calcular_saldo_ate_competencia(df_lan, df_ap, df_res, ordem_alvo):
   try:
