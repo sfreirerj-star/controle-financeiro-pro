@@ -287,13 +287,10 @@ with aba_desafio:
         datetime.strptime(data_aporte.strip(), "%d/%m/%Y")
         conexao = obter_conexao()
         cursor = conexao.cursor()
-        
-        # 1. Salva na tabela do desafio
         cursor.execute(
             "INSERT INTO desafio_aportes (data, valor, local_aplicacao) VALUES (%s, %s, %s)",
             (data_aporte.strip(), valor_aporte, local_aporte),
         )
-        
         conexao.commit()
         cursor.close()
         conexao.close()
@@ -464,91 +461,119 @@ with aba_desafio:
     st.info("Nenhum aporte registrado ainda.")
 
 
-# --- ABA 2: MÓDULO DE RESGATES ---
+# --- ABA 2: MÓDULO DE RESGATES E CORREÇÃO MONETÁRIA ---
 with aba_resgate:
-  st.markdown("### 💸 Módulo de Resgate de Aportes")
+  st.markdown("### 💸 Módulo de Resgates & Ajuste de Rendimentos")
   st.write(
-      "Registre retiradas ou resgates parciais/totais realizados nas suas contas e investimentos."
+      "Registre resgates ou adicione correções monetárias/rendimentos para alinhar o saldo com o extrato da corretora."
   )
 
-  with st.form("form_novo_resgate"):
-    col_r1, col_r2, col_r3 = st.columns(3)
-    with col_r1:
-      data_resgate = st.text_input(
-          "Data do Resgate (DD/MM/AAAA)",
-          value=datetime.now().strftime("%d/%m/%Y"),
-          key="resgate_data",
-      )
-    with col_r2:
-      valor_resgate = st.number_input(
-          "Valor Resgatado (R$)",
-          min_value=1.0,
-          value=100.00,
-          step=50.0,
-          format="%.2f",
-          key="resgate_valor",
-      )
-    with col_r3:
-      locais_resgate = [
-          "Banco Itaú",
-          "Nomad (Investimentos em Dólar)",
-          "Sofisa Direto (CDB 105% CDI)",
-          "Banco Inter (CDB Liquidez Diária)",
-          "Nubank (Caixinha / RDB 100% CDI)",
-          "Tesouro Selic (Tesouro Direto)",
-          "Outro (Personalizado)",
-      ]
-      local_origem_sel = st.selectbox(
-          "Instituição de Origem do Resgate", locais_resgate, key="resgate_local"
-      )
+  tipo_operacao = st.radio("Escolha a Operação:", ["Registrar Resgate", "Registrar Rendimento / Correção Monetária"], horizontal=True)
 
-    origem_personalizada = st.text_input(
-        "Se selecionou 'Outro (Personalizado)' acima, digite o nome do Banco ou Corretora:",
-        key="resgate_outro_local",
-    )
-    
-    motivo_resgate = st.text_input(
-        "Motivo do Resgate / Destino (Ex: Emergência, Oportunidade, Compra, etc.)",
-        key="resgate_motivo",
-    )
-
-    if st.form_submit_button("📤 Registrar Resgate"):
-      if local_origem_sel == "Outro (Personalizado)":
-        origem_final = (
-            origem_personalizada.strip()
-            if origem_personalizada.strip()
-            else "Outro"
+  if tipo_operacao == "Registrar Resgate":
+    with st.form("form_novo_resgate"):
+      col_r1, col_r2, col_r3 = st.columns(3)
+      with col_r1:
+        data_resgate = st.text_input(
+            "Data do Resgate (DD/MM/AAAA)",
+            value=datetime.now().strftime("%d/%m/%Y"),
+            key="resgate_data",
         )
-      else:
-        origem_final = local_origem_sel
-
-      try:
-        datetime.strptime(data_resgate.strip(), "%d/%m/%Y")
-        conexao = obter_conexao()
-        cursor = conexao.cursor()
-        
-        # 1. Registra no Módulo de Resgates
-        cursor.execute(
-            "INSERT INTO desafio_resgates (data, valor, local_origem, motivo) VALUES (%s, %s, %s, %s)",
-            (data_resgate.strip(), valor_resgate, origem_final, motivo_resgate.strip()),
+      with col_r2:
+        valor_resgate = st.number_input(
+            "Valor Resgatado (R$)",
+            min_value=1.0,
+            value=100.00,
+            step=50.0,
+            format="%.2f",
+            key="resgate_valor",
+        )
+      with col_r3:
+        locais_resgate = [
+            "Banco Itaú",
+            "Nomad (Investimentos em Dólar)",
+            "Sofisa Direto (CDB 105% CDI)",
+            "Banco Inter (CDB Liquidez Diária)",
+            "Nubank (Caixinha / RDB 100% CDI)",
+            "Tesouro Selic (Tesouro Direto)",
+            "Outro (Personalizado)",
+        ]
+        local_origem_sel = st.selectbox(
+            "Instituição de Origem do Resgate", locais_resgate, key="resgate_local"
         )
 
-        # 2. Registra diretamente na tabela de Lançamentos integrando aos créditos mensais
-        desc_lancamento = f"Resgate {origem_final}" if not motivo_resgate.strip() else f"Resgate {origem_final} - {motivo_resgate.strip()}"
-        cursor.execute(
-            "INSERT INTO lancamentos (data, tipo, categoria, descricao, valor) VALUES (%s, %s, %s, %s, %s)",
-            (data_resgate.strip(), "Receita", "Resgate", desc_lancamento, valor_resgate),
-        )
+      origem_personalizada = st.text_input(
+          "Se 'Outro (Personalizado)', digite o nome:",
+          key="resgate_outro_local",
+      )
+      
+      motivo_resgate = st.text_input(
+          "Motivo do Resgate / Destino (Ex: Emergência, Oportunidade, etc.)",
+          key="resgate_motivo",
+      )
 
-        conexao.commit()
-        cursor.close()
-        conexao.close()
-        st.success("Resgate registrado com sucesso e integrado aos créditos mensais!")
-        st.rerun()
-      except ValueError:
-        st.error("Data inválida. Utilize o formato DD/MM/AAAA.")
-      except Exception as e:
-        st.error(f"Erro ao salvar resgate: {e}")
+      if st.form_submit_button("📤 Registrar Resgate"):
+        origem_final = origem_personalizada.strip() if local_origem_sel == "Outro (Personalizado)" and origem_personalizada.strip() else local_origem_sel
+        try:
+          datetime.strptime(data_resgate.strip(), "%d/%m/%Y")
+          conexao = obter_conexao()
+          cursor = conexao.cursor()
+          
+          cursor.execute(
+              "INSERT INTO desafio_resgates (data, valor, local_origem, motivo) VALUES (%s, %s, %s, %s)",
+              (data_resgate.strip(), valor_resgate, origem_final, motivo_resgate.strip()),
+          )
+
+          desc_lancamento = f"Resgate {origem_final}" if not motivo_resgate.strip() else f"Resgate {origem_final} - {motivo_resgate.strip()}"
+          cursor.execute(
+              "INSERT INTO lancamentos (data, tipo, categoria, descricao, valor) VALUES (%s, %s, %s, %s, %s)",
+              (data_resgate.strip(), "Receita", "Resgate", desc_lancamento, valor_resgate),
+          )
+
+          conexao.commit()
+          cursor.close()
+          conexao.close()
+          st.success("Resgate registrado com sucesso!")
+          st.rerun()
+        except ValueError:
+          st.error("Data inválida. Utilize o formato DD/MM/AAAA.")
+        except Exception as e:
+          st.error(f"Erro ao salvar resgate: {e}")
+  else:
+    with st.form("form_novo_rendimento"):
+      st.info("💡 **Ajuste de Corretora:** Lançar rendimentos aumenta o total aportado/acumulado proporcionalmente, permitindo corrigir pequenas variações de juros.")
+      col_rend1, col_rend2, col_rend3 = st.columns(3)
+      with col_rend1:
+        data_rend = st.text_input("Data do Rendimento (DD/MM/AAAA)", value=datetime.now().strftime("%d/%m/%Y"))
+      with col_rend2:
+        valor_rend = st.number_input("Valor da Correção / Juros (R$)", min_value=0.01, value=0.76, step=0.10, format="%.2f")
+      with col_rend3:
+        local_rend = st.selectbox("Instituição", [
+            "Banco Itaú",
+            "Nomad (Investimentos em Dólar)",
+            "Sofisa Direto (CDB 105% CDI)",
+            "Banco Inter (CDB Liquidez Diária)",
+            "Nubank (Caixinha / RDB 100% CDI)",
+            "Tesouro Selic (Tesouro Direto)"
+        ])
+
+      if st.form_submit_button("📈 Salvar Correção / Rendimento"):
+        try:
+          datetime.strptime(data_rend.strip(), "%d/%m/%Y")
+          conexao = obter_conexao()
+          cursor = conexao.cursor()
+          # Registra como aporte de ajuste para somar no saldo da instituição
+          cursor.execute(
+              "INSERT INTO desafio_aportes (data, valor, local_aplicacao) VALUES (%s, %s, %s)",
+              (data_rend.strip(), valor_rend, f"{local_rend} (Rendimento)"),
+          )
+          conexao.commit()
+          cursor.close()
+          conexao.close()
+          st.success("Correção monetária / rendimento aplicado com sucesso!")
+          st.rerun()
+        except Exception as e:
+          st.error(f"Erro ao aplicar rendimento: {e}")
 
   st.divider()
 
@@ -593,7 +618,7 @@ with aba_resgate:
         conexao.commit()
         cursor.close()
         conexao.close()
-        st.warning(f"Resgate ID {id_resgate_excluir} excluído com sucesso de todas as tabelas!")
+        st.warning(f"Resgate ID {id_resgate_excluir} excluído com sucesso!")
         st.rerun()
       except Exception as e:
         st.error(f"Erro ao excluir resgate: {e}")
@@ -846,7 +871,7 @@ with aba_orientacao:
   )
   check_2 = st.checkbox(
       "Meus investimentos estão divididos em pelo menos duas instituições"
-      " financeiras diferentes para mitigar risco sistêmico."
+      " diferentes para mitigar risco sistêmico."
   )
   check_3 = st.checkbox(
       "Acompanho periodicamente minhas despesas e receitas mensais para"
