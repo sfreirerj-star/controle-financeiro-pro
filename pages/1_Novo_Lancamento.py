@@ -198,11 +198,12 @@ with st.form("form_novo_lancamento", clear_on_submit=True):
 
 st.divider()
 
-# Carregamento robusto dos dados (Lançamentos e Aportes)
+# Carregamento dos dados (Lançamentos, Aportes e Resgates do Desafio Reserva)
 df_lancamentos = pd.DataFrame(
     columns=["id", "data", "tipo", "categoria", "descricao", "valor"]
 )
 df_aportes = pd.DataFrame(columns=["id", "data", "valor", "local_aplicacao"])
+df_resgates = pd.DataFrame(columns=["id", "data", "valor", "local_origem", "motivo"])
 
 try:
   conexao = obter_conexao()
@@ -216,6 +217,13 @@ try:
   try:
     df_aportes = pd.read_sql_query(
         "SELECT id, data, valor, local_aplicacao FROM desafio_aportes", conexao
+    )
+  except Exception:
+    conexao.rollback()
+
+  try:
+    df_resgates = pd.read_sql_query(
+        "SELECT id, data, valor, local_origem, motivo FROM desafio_resgates", conexao
     )
   except Exception:
     conexao.rollback()
@@ -236,7 +244,7 @@ else:
   df_lancamentos["competencia"] = "Indefinido"
   df_lancamentos["tipo_clean"] = ""
 
-# Tratamento dos Aportes na competência
+# Tratamento dos Aportes
 if not df_aportes.empty and "data" in df_aportes.columns:
   res_ap = df_aportes["data"].apply(extrair_competencia)
   df_aportes["competencia"] = [x[0] for x in res_ap]
@@ -248,6 +256,17 @@ if not df_aportes.empty and "data" in df_aportes.columns:
 else:
   total_aportes_mes = 0.0
 
+# Tratamento dos Resgates
+if not df_resgates.empty and "data" in df_resgates.columns:
+  res_resg = df_resgates["data"].apply(extrair_competencia)
+  df_resgates["competencia"] = [x[0] for x in res_resg]
+  df_resgates["valor_num"] = pd.to_numeric(
+      df_resgates["valor"], errors="coerce"
+  ).fillna(0.0)
+  df_resgates_mes = df_resgates[df_resgates["competencia"] == competencia_selecionada]
+else:
+  df_resgates_mes = pd.DataFrame()
+
 # Filtrar lançamentos da competência selecionada
 if not df_lancamentos.empty:
   df_lanc_mes = df_lancamentos[
@@ -255,6 +274,29 @@ if not df_lancamentos.empty:
   ].copy()
 else:
   df_lanc_mes = pd.DataFrame(columns=df_lancamentos.columns)
+
+# Mapeia resgates automáticos para unificar na tabela de lançamentos
+if not df_resgates_mes.empty:
+  lista_resgates = []
+  for _, row in df_resgates_mes.iterrows():
+    loc = row["local_origem"]
+    mot = str(row["motivo"]).strip() if pd.notna(row["motivo"]) else ""
+    desc = f"Resgate {loc}" if not mot else f"Resgate {loc} - {mot}"
+    
+    lista_resgates.append({
+        "id": f"RESG-{row['id']}",
+        "data": row["data"],
+        "tipo": "Receita",
+        "categoria": "Resgate",
+        "descricao": desc,
+        "valor": row["valor"],
+        "competencia": row["competencia"],
+        "valor_num": row["valor_num"],
+        "tipo_clean": "receita"
+    })
+  
+  df_resg_conv = pd.DataFrame(lista_resgates)
+  df_lanc_mes = pd.concat([df_lanc_mes, df_resg_conv], ignore_index=True)
 
 total_receitas = (
     df_lanc_mes[
@@ -274,7 +316,6 @@ total_gastos = (
     else 0.0
 )
 
-# Saldo da Competência considerando Receitas - Gastos - Aportes do Mês
 saldo_atual = total_receitas - total_gastos - total_aportes_mes
 
 
@@ -308,9 +349,9 @@ st.subheader(f"Histórico de Lançamentos da Competência: {competencia_selecion
 if not df_lanc_mes.empty:
   df_exibicao = df_lanc_mes.copy()
   df_exibicao["valor"] = df_exibicao["valor_num"].apply(fmt_moeda)
-  df_exibicao = df_exibicao.drop(
-      columns=["tipo_clean", "valor_num", "competencia"], errors="ignore"
-  )
-  st.dataframe(df_exibicao.set_index("id"), use_container_width=True)
+  
+  # Seleciona apenas as colunas padrão para evitar o KeyError
+  cols_finais = [c for c in ["id", "data", "tipo", "categoria", "descricao", "valor"] if c in df_exibicao.columns]
+  st.dataframe(df_exibicao[cols_finais].set_index("id"), use_container_width=True)
 else:
   st.info("Nenhum lançamento registrado nesta competência.")
