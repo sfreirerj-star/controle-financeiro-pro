@@ -100,26 +100,21 @@ try:
 except Exception as e:
   st.sidebar.error(f"Erro geral de conexão com o banco na nuvem: {e}")
 
-# Tratamento e soma total acumulada dos aportes
+# Tratamento da coluna valor_num em aportes
 if not df_aportes.empty and "valor" in df_aportes.columns:
   df_aportes["valor_num"] = pd.to_numeric(
       df_aportes["valor"], errors="coerce"
   ).fillna(0.0)
-  total_aportes_geral = df_aportes["valor_num"].sum()
 else:
-  total_aportes_geral = 0.0
+  df_aportes["valor_num"] = 0.0
 
-# Tratamento e soma total acumulada dos resgates
+# Tratamento da coluna valor_num em resgates
 if not df_resgates.empty and "valor" in df_resgates.columns:
   df_resgates["valor_num"] = pd.to_numeric(
       df_resgates["valor"], errors="coerce"
   ).fillna(0.0)
-  total_resgates_geral = df_resgates["valor_num"].sum()
 else:
-  total_resgates_geral = 0.0
-
-# PATRIMÔNIO LÍQUIDO GUARDADO REAL (Aportes Totais - Resgates Totais)
-patrimonio_liquido_guardado = total_aportes_geral - total_resgates_geral
+  df_resgates["valor_num"] = 0.0
 
 
 def fmt_moeda(valor):
@@ -325,9 +320,47 @@ def calcular_saldo_ate_competencia(df_lan, df_ap, df_res, ordem_alvo):
     return 0.0
 
 
+# Função para calcular o Patrimônio Guardado Acumulado EXATAMENTE até o mês selecionado
+def calcular_patrimonio_guardado_ate(df_ap, df_res, ordem_alvo):
+  try:
+    todas_ordens = sorted(
+        list(
+            set(
+                df_ap[df_ap["comp_ordem"] != "9999-99"]["comp_ordem"].unique().tolist()
+                + (df_res[df_res["comp_ordem"] != "9999-99"]["comp_ordem"].unique().tolist() if not df_res.empty and "comp_ordem" in df_res.columns else [])
+            )
+        )
+    )
+    patrimonio_acumulado = 0.0
+    for ord_comp in todas_ordens:
+      if ord_comp <= ordem_alvo:
+        apo_c = (
+            df_ap[df_ap["comp_ordem"] == ord_comp]["valor_num"].sum()
+            if not df_ap.empty and "valor_num" in df_ap.columns else 0.0
+        )
+        res_c = (
+            df_res[df_res["comp_ordem"] == ord_comp]["valor_num"].sum()
+            if not df_res.empty and "valor_num" in df_res.columns else 0.0
+        )
+        patrimonio_acumulado += (apo_c - res_c)
+    return patrimonio_acumulado
+  except Exception:
+    return 0.0
+
+
 saldo_remanescente_anterior = calcular_saldo_ate_competencia(
     df_lancamentos, df_aportes, df_resgates, ordem_selecionada
 )
+
+# Patrimônio Guardado Acumulado até o mês selecionado
+patrimonio_guardado_mes = calcular_patrimonio_guardado_ate(
+    df_aportes, df_resgates, ordem_selecionada
+)
+
+# Totais históricos globais (para referência no banner)
+total_aportes_geral = df_aportes["valor_num"].sum() if not df_aportes.empty else 0.0
+total_resgates_geral = df_resgates["valor_num"].sum() if not df_resgates.empty else 0.0
+patrimonio_liquido_geral = total_aportes_geral - total_resgates_geral
 
 saldo_mes = (
     saldo_remanescente_anterior
@@ -344,11 +377,11 @@ col1.metric("Saldo Anterior", fmt_moeda(saldo_remanescente_anterior))
 col2.metric("Entradas", fmt_moeda(total_receitas_mes))
 col3.metric("Gastos Comuns", fmt_moeda(total_gastos_mes))
 
-# 4º CARTÃO: Exibe o Patrimônio Líquido Guardado Real (Aportes Totais - Resgates Totais)
+# 4º CARTÃO: Patrimônio Guardado Acumulado até a Competência Selecionada
 col4.metric(
     "Patrimônio Guardado",
-    fmt_moeda(patrimonio_liquido_guardado),
-    delta="Líquido Investido"
+    fmt_moeda(patrimonio_guardado_mes),
+    delta="Acumulado Líquido"
 )
 
 if saldo_mes >= 0:
@@ -363,11 +396,11 @@ else:
       delta_color="inverse",
   )
 
-# Banner descritivo atualizado com os resgates corretos da tabela desafio_resgates
+# Banner descritivo atualizado com o acumulado do mês
 st.info(
-    f"💡 **Detalhamento da Reserva:** Total Aportado Histórico: **{fmt_moeda(total_aportes_geral)}** | "
-    f"Total Resgatado Histórico: **{fmt_moeda(total_resgates_geral)}** | "
-    f"Saldo Guardado Atual: **{fmt_moeda(patrimonio_liquido_guardado)}**"
+    f"💡 **Detalhamento da Reserva ({competencia_selecionada}):** Patrimônio Acumulado no Mês: **{fmt_moeda(patrimonio_guardado_mes)}** | "
+    f"Aportes até o Mês: **{fmt_moeda(df_aportes[df_aportes['comp_ordem'] <= ordem_selecionada]['valor_num'].sum() if not df_aportes.empty else 0.0)}** | "
+    f"Resgates até o Mês: **{fmt_moeda(df_resgates[df_resgates['comp_ordem'] <= ordem_selecionada]['valor_num'].sum() if not df_resgates.empty and 'comp_ordem' in df_resgates.columns else 0.0)}**"
 )
 
 st.divider()
