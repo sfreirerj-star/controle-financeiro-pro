@@ -326,7 +326,7 @@ def calcular_saldo_ate_competencia(df_lan, df_ap, df_res, ordem_alvo):
             )
         ]["valor"].sum()
 
-        apo_c = (
+       apo_c = (
             df_ap[df_ap["comp_ordem"] == ord_comp]["valor_num"].sum()
             if not df_ap.empty and "valor_num" in df_ap.columns else 0.0
         )
