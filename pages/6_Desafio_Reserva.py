@@ -416,6 +416,38 @@ with aba_resgate:
       "Registre retiradas ou resgates parciais/totais realizados nas suas contas e investimentos."
   )
 
+  # Função para garantir a sincronização de resgates antigos na tabela de lançamentos
+  def sincronizar_resgates_antigos():
+    try:
+      conexao = obter_conexao()
+      cursor = conexao.cursor()
+      df_r = pd.read_sql_query("SELECT id, data, valor, local_origem, motivo FROM desafio_resgates", conexao)
+      df_l = pd.read_sql_query("SELECT descricao, valor FROM lancamentos WHERE categoria = 'Resgate'", conexao)
+      
+      if not df_r.empty:
+        for _, row in df_r.iterrows():
+          loc = row["local_origem"]
+          mot = str(row["motivo"]).strip() if pd.notna(row["motivo"]) else ""
+          desc_esperada = f"Resgate {loc}" if not mot else f"Resgate {loc} - {mot}"
+          
+          # Se este resgate ainda não existir na tabela lancamentos, insere
+          existe = False
+          if not df_l.empty:
+            existe = not df_l[(df_l["descricao"] == desc_esperada) & (abs(df_l["valor"] - float(row["valor"])) < 0.01)].empty
+          
+          if not existe:
+            cursor.execute(
+                "INSERT INTO lancamentos (data, tipo, categoria, descricao, valor) VALUES (%s, %s, %s, %s, %s)",
+                (row["data"], "Receita", "Resgate", desc_esperada, float(row["valor"])),
+            )
+        conexao.commit()
+      cursor.close()
+      conexao.close()
+    except Exception:
+      pass
+
+  sincronizar_resgates_antigos()
+
   with st.form("form_novo_resgate"):
     col_r1, col_r2, col_r3 = st.columns(3)
     with col_r1:
@@ -472,13 +504,13 @@ with aba_resgate:
         conexao = obter_conexao()
         cursor = conexao.cursor()
         
-        # 1. Registra no Módulo de Resgates (Abate do Patrimônio Guardado)
+        # 1. Registra no Módulo de Resgates
         cursor.execute(
             "INSERT INTO desafio_resgates (data, valor, local_origem, motivo) VALUES (%s, %s, %s, %s)",
             (data_resgate.strip(), valor_resgate, origem_final, motivo_resgate.strip()),
         )
 
-        # 2. Registra Automaticamente nos Lançamentos como Crédito (Receita)
+        # 2. Registra diretamente na tabela de Lançamentos
         desc_lancamento = f"Resgate {origem_final}" if not motivo_resgate.strip() else f"Resgate {origem_final} - {motivo_resgate.strip()}"
         cursor.execute(
             "INSERT INTO lancamentos (data, tipo, categoria, descricao, valor) VALUES (%s, %s, %s, %s, %s)",
@@ -513,7 +545,6 @@ with aba_resgate:
         df_tabela_resgates.set_index("id"), use_container_width=True, height=200
     )
 
-    # Opção para excluir um resgate lançado incorretamente
     st.markdown("#### 🗑️ Excluir Lançamento de Resgate")
     id_resgate_excluir = st.selectbox(
         "Selecione o ID do resgate que deseja excluir:",
@@ -524,17 +555,28 @@ with aba_resgate:
       try:
         conexao = obter_conexao()
         cursor = conexao.cursor()
+        
+        # Puxa os dados do resgate antes de excluir para apagar também de lancamentos
+        cursor.execute("SELECT data, valor, local_origem, motivo FROM desafio_resgates WHERE id = %s", (int(id_resgate_excluir),))
+        row_del = cursor.fetchone()
+        
+        if row_del:
+          dt_del, val_del, loc_del, mot_del = row_del
+          mot_del_str = str(mot_del).strip() if mot_del else ""
+          desc_del = f"Resgate {loc_del}" if not mot_del_str else f"Resgate {loc_del} - {mot_del_str}"
+          
+          cursor.execute("DELETE FROM lancamentos WHERE categoria = 'Resgate' AND descricao = %s AND valor = %s", (desc_del, float(val_del)))
+
         cursor.execute("DELETE FROM desafio_resgates WHERE id = %s", (int(id_resgate_excluir),))
         conexao.commit()
         cursor.close()
         conexao.close()
-        st.warning(f"Resgate ID {id_resgate_excluir} excluído com sucesso!")
+        st.warning(f"Resgate ID {id_resgate_excluir} excluído com sucesso de todas as tabelas!")
         st.rerun()
       except Exception as e:
         st.error(f"Erro ao excluir resgate: {e}")
   else:
     st.info("Nenhum resgate registrado até o momento.")
-
 # --- ABA 3: SIMULADOR DE ANTECIPAÇÃO DE METAS ---
 with aba_simulador:
   st.markdown("### 🎯 Simulador de Antecipação de Metas")

@@ -7,10 +7,9 @@ from utils import aplicar_estilo_moderno
 st.set_page_config(
     page_title="Novo Lançamento - Marcelo", page_icon="📝", layout="wide"
 )
-aplicar_estilo_moderno()  # <-- Essencial em cada página
+aplicar_estilo_moderno()
 
 
-# --- FUNÇÕES AUTOSSUFICIENTES ---
 def obter_conexao():
   return psycopg2.connect(st.secrets["DATABASE_URL"])
 
@@ -47,27 +46,19 @@ def configurar_sidebar_competencia(conexao, prefixo_key="global"):
   except Exception:
     df_a = pd.DataFrame(columns=["data"])
 
-  try:
-    df_r = pd.read_sql_query("SELECT data FROM desafio_resgates", conexao)
-  except Exception:
-    df_r = pd.DataFrame(columns=["data"])
-
-  for df in [df_l, df_a, df_r]:
+  for df in [df_l, df_a]:
     if not df.empty and "data" in df.columns:
       res = df["data"].apply(extrair_competencia)
       df["competencia"] = [x[0] for x in res]
       df["comp_ordem"] = [x[1] for x in res]
 
-  if not df_l.empty or not df_a.empty or not df_r.empty:
+  if not df_l.empty or not df_a.empty:
     mapeamento_comps = pd.concat([
         df_l[["competencia", "comp_ordem"]]
         if not df_l.empty
         else pd.DataFrame(columns=["competencia", "comp_ordem"]),
         df_a[["competencia", "comp_ordem"]]
         if not df_a.empty
-        else pd.DataFrame(columns=["competencia", "comp_ordem"]),
-        df_r[["competencia", "comp_ordem"]]
-        if not df_r.empty
         else pd.DataFrame(columns=["competencia", "comp_ordem"]),
     ]).drop_duplicates()
 
@@ -112,7 +103,6 @@ def configurar_sidebar_competencia(conexao, prefixo_key="global"):
   return competencia_selecionada, ordem_sel
 
 
-# Inicializar tabela no banco se não existir
 def garantir_tabelas():
   try:
     conexao = obter_conexao()
@@ -136,7 +126,6 @@ def garantir_tabelas():
 
 garantir_tabelas()
 
-# 1. Chamar o filtro de competência na barra lateral
 try:
   conexao_temp = obter_conexao()
   competencia_selecionada, ordem_selecionada = configurar_sidebar_competencia(
@@ -153,7 +142,6 @@ st.write(
     " dos aportes e integração dos resgates de investimentos."
 )
 
-# Formulário organizado em 3 colunas
 with st.form("form_novo_lancamento", clear_on_submit=True):
   col1, col2, col3 = st.columns(3)
 
@@ -198,12 +186,10 @@ with st.form("form_novo_lancamento", clear_on_submit=True):
 
 st.divider()
 
-# Carregamento dos dados (Lançamentos, Aportes e Resgates do Desafio Reserva)
 df_lancamentos = pd.DataFrame(
     columns=["id", "data", "tipo", "categoria", "descricao", "valor"]
 )
 df_aportes = pd.DataFrame(columns=["id", "data", "valor", "local_aplicacao"])
-df_resgates = pd.DataFrame(columns=["id", "data", "valor", "local_origem", "motivo"])
 
 try:
   conexao = obter_conexao()
@@ -221,18 +207,10 @@ try:
   except Exception:
     conexao.rollback()
 
-  try:
-    df_resgates = pd.read_sql_query(
-        "SELECT id, data, valor, local_origem, motivo FROM desafio_resgates", conexao
-    )
-  except Exception:
-    conexao.rollback()
-
   conexao.close()
 except Exception as e:
   st.error(f"Erro ao carregar dados do banco: {e}")
 
-# Tratamento e limpeza dos Lançamentos
 if not df_lancamentos.empty and "data" in df_lancamentos.columns:
   res_lanc = df_lancamentos["data"].apply(extrair_competencia)
   df_lancamentos["competencia"] = [x[0] for x in res_lanc]
@@ -244,7 +222,6 @@ else:
   df_lancamentos["competencia"] = "Indefinido"
   df_lancamentos["tipo_clean"] = ""
 
-# Tratamento dos Aportes
 if not df_aportes.empty and "data" in df_aportes.columns:
   res_ap = df_aportes["data"].apply(extrair_competencia)
   df_aportes["competencia"] = [x[0] for x in res_ap]
@@ -256,47 +233,12 @@ if not df_aportes.empty and "data" in df_aportes.columns:
 else:
   total_aportes_mes = 0.0
 
-# Tratamento dos Resgates
-if not df_resgates.empty and "data" in df_resgates.columns:
-  res_resg = df_resgates["data"].apply(extrair_competencia)
-  df_resgates["competencia"] = [x[0] for x in res_resg]
-  df_resgates["valor_num"] = pd.to_numeric(
-      df_resgates["valor"], errors="coerce"
-  ).fillna(0.0)
-  df_resgates_mes = df_resgates[df_resgates["competencia"] == competencia_selecionada]
-else:
-  df_resgates_mes = pd.DataFrame()
-
-# Filtrar lançamentos da competência selecionada
 if not df_lancamentos.empty:
   df_lanc_mes = df_lancamentos[
       df_lancamentos["competencia"] == competencia_selecionada
   ].copy()
 else:
   df_lanc_mes = pd.DataFrame(columns=df_lancamentos.columns)
-
-# Mapeia resgates automáticos para unificar na tabela de lançamentos
-if not df_resgates_mes.empty:
-  lista_resgates = []
-  for _, row in df_resgates_mes.iterrows():
-    loc = row["local_origem"]
-    mot = str(row["motivo"]).strip() if pd.notna(row["motivo"]) else ""
-    desc = f"Resgate {loc}" if not mot else f"Resgate {loc} - {mot}"
-    
-    lista_resgates.append({
-        "id": f"RESG-{row['id']}",
-        "data": row["data"],
-        "tipo": "Receita",
-        "categoria": "Resgate",
-        "descricao": desc,
-        "valor": row["valor"],
-        "competencia": row["competencia"],
-        "valor_num": row["valor_num"],
-        "tipo_clean": "receita"
-    })
-  
-  df_resg_conv = pd.DataFrame(lista_resgates)
-  df_lanc_mes = pd.concat([df_lanc_mes, df_resg_conv], ignore_index=True)
 
 total_receitas = (
     df_lanc_mes[
@@ -349,8 +291,6 @@ st.subheader(f"Histórico de Lançamentos da Competência: {competencia_selecion
 if not df_lanc_mes.empty:
   df_exibicao = df_lanc_mes.copy()
   df_exibicao["valor"] = df_exibicao["valor_num"].apply(fmt_moeda)
-  
-  # Seleciona apenas as colunas padrão para evitar o KeyError
   cols_finais = [c for c in ["id", "data", "tipo", "categoria", "descricao", "valor"] if c in df_exibicao.columns]
   st.dataframe(df_exibicao[cols_finais].set_index("id"), use_container_width=True)
 else:

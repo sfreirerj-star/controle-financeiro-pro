@@ -9,7 +9,7 @@ st.set_page_config(
     page_icon="✏️",
     layout="wide",
 )
-aplicar_estilo_moderno()  # <-- Essencial em cada página
+aplicar_estilo_moderno()
 
 
 def obter_conexao():
@@ -48,27 +48,19 @@ def configurar_sidebar_competencia(conexao, prefixo_key="global"):
   except Exception:
     df_a = pd.DataFrame(columns=["data"])
 
-  try:
-    df_r = pd.read_sql_query("SELECT data FROM desafio_resgates", conexao)
-  except Exception:
-    df_r = pd.DataFrame(columns=["data"])
-
-  for df_item in [df_l, df_a, df_r]:
+  for df_item in [df_l, df_a]:
     if not df_item.empty and "data" in df_item.columns:
       res = df_item["data"].apply(extrair_competencia)
       df_item["competencia"] = [x[0] for x in res]
       df_item["comp_ordem"] = [x[1] for x in res]
 
-  if not df_l.empty or not df_a.empty or not df_r.empty:
+  if not df_l.empty or not df_a.empty:
     mapeamento_comps = pd.concat([
         df_l[["competencia", "comp_ordem"]]
         if not df_l.empty
         else pd.DataFrame(columns=["competencia", "comp_ordem"]),
         df_a[["competencia", "comp_ordem"]]
         if not df_a.empty
-        else pd.DataFrame(columns=["competencia", "comp_ordem"]),
-        df_r[["competencia", "comp_ordem"]]
-        if not df_r.empty
         else pd.DataFrame(columns=["competencia", "comp_ordem"]),
     ]).drop_duplicates()
 
@@ -113,29 +105,25 @@ def configurar_sidebar_competencia(conexao, prefixo_key="global"):
   return competencia_selecionada, ordem_sel
 
 
-# Identificação correta do Painel do Marcelo
 st.title("💰 Controle Financeiro — Painel do Marcelo")
 st.subheader("✏️ Gerenciar, Editar ou Excluir Lançamentos")
 st.write(
-    "Gerencie, edite ou exclua seus lançamentos manuais (incluindo resgates"
-    " integrados) e acompanhe seus compromissos."
+    "Gerencie, edite ou exclua seus lançamentos manuais e acompanhe seus"
+    " compromissos."
 )
 
 try:
   conexao = obter_conexao()
 
-  # 1. Configurar barra lateral de competência
   competencia_selecionada, ordem_selecionada = configurar_sidebar_competencia(
       conexao, prefixo_key="gerenciar_lancamentos"
   )
 
-  # Busca lançamentos manuais
   df = pd.read_sql_query(
       "SELECT id, data, tipo, categoria, descricao, valor FROM lancamentos"
       " ORDER BY id DESC",
       conexao,
   )
-  # Busca dívidas cadastradas para cruzar os parcelamentos ativos
   df_div = pd.read_sql_query(
       "SELECT id, credor, valor_parcela, dia_vencimento, status FROM dividas"
       " WHERE status = 'Pendente'",
@@ -149,26 +137,21 @@ except Exception as e:
   competencia_selecionada = datetime.now().strftime("%m/%Y")
 
 if not df.empty:
-  # Tratamento e extração da competência dos lançamentos manuais
   res_lanc = df["data"].apply(extrair_competencia)
   df["competencia"] = [x[0] for x in res_lanc]
   df["comp_ordem"] = [x[1] for x in res_lanc]
 
-  # Filtra o dataframe principal pela competência selecionada na barra lateral
   df_mes = df[df["competencia"] == competencia_selecionada].copy()
 
-  # Converte a coluna de data para data real do Python para filtrar passado/futuro
   df["data_dt"] = pd.to_datetime(df["data"], format="%d/%m/%Y", errors="coerce")
   hoje = pd.Timestamp(datetime.now().date())
 
-  # Separa os lançamentos futuros manuais
   df_futuros = (
       df[df["data_dt"] > hoje]
       .sort_values(by="data_dt", ascending=True)
       .copy()
   )
 
-  # SEÇÃO INTELIGENTE: Puxa as parcelas ativas das dívidas para o mês atual/futuro
   if not df_div.empty:
     df_div_ativas = df_div[df_div["valor_parcela"] > 0].copy()
 
@@ -212,11 +195,7 @@ if not df.empty:
         df_futuros = df_futuros.sort_values(by="data_dt", ascending=True)
 
   st.write(
-      f"### 🔄 Editar ou Excluir Registros Manuais ({competencia_selecionada})"
-  )
-  st.write(
-      "Selecione um lançamento abaixo para alterar os dados (exceto o tipo)"
-      " ou excluí-lo."
+      f"### 🔄 Editar ou Excluir Registros ({competencia_selecionada})"
   )
 
 
@@ -256,10 +235,8 @@ if not df.empty:
         "Escolha o lançamento para gerenciar:", df_mes["resumo_label"].tolist()
     )
 
-    id_selecionado = int(
-        lancamento_selecionado.split(" | ")[0].replace("ID: ", "")
-    )
-    dados_atuais = df_mes[df_mes["id"] == id_selecionado].iloc[0]
+    id_str = lancamento_selecionado.split(" | ")[0].replace("ID: ", "")
+    dados_atuais = df_mes[df_mes["id"].astype(str) == id_str].iloc[0]
 
     st.divider()
 
@@ -268,9 +245,7 @@ if not df.empty:
     with col_edit1:
       st.markdown("### 🔄 Atualizar Lançamento")
       st.info(
-          f"💡 **Tipo Fixo:** Este registro é uma **{dados_atuais['tipo']}**. "
-          "Para alterar entre Receita e Despesa, exclua o registro e crie um"
-          " novo."
+          f"💡 **Tipo Fixo:** Este registro é uma **{dados_atuais['tipo']}**."
       )
 
       with st.form("form_edicao"):
@@ -301,16 +276,16 @@ if not df.empty:
 
             cursor.execute(
                 """
-                            UPDATE lancamentos 
-                            SET data = %s, categoria = %s, descricao = %s, valor = %s
-                            WHERE id = %s
-                            """,
+                UPDATE lancamentos 
+                SET data = %s, categoria = %s, descricao = %s, valor = %s
+                WHERE id = %s
+                """,
                 (
                     nova_data.strip(),
                     nova_categoria.strip(),
                     nova_descricao.strip(),
                     valor_limpo,
-                    id_selecionado,
+                    int(id_str),
                 ),
             )
             conexao.commit()
@@ -319,49 +294,44 @@ if not df.empty:
             st.success("Lançamento atualizado com sucesso!")
             st.rerun()
           except ValueError:
-            st.error(
-                "A data digitada é inválida. Utilize o formato DD/MM/AAAA."
-            )
+            st.error("A data digitada é inválida. Utilize o formato DD/MM/AAAA.")
           except Exception as e:
             st.error(f"Erro ao atualizar: {e}")
 
     with col_edit2:
       st.markdown("### 🗑️ Excluir Lançamento")
       st.warning(
-          "Atenção: Essa operação apagará permanentemente este registro e o"
-          " saldo retornará imediatamente ao valor real."
+          "Atenção: Essa operação apagará permanentemente este registro."
       )
 
       if st.button("Excluir este Lançamento", type="primary"):
         try:
           conexao = obter_conexao()
           cursor = conexao.cursor()
-          cursor.execute(
-              "DELETE FROM lancamentos WHERE id = %s", (id_selecionado,)
-          )
+          
+          # Caso o item apagado seja um Resgate, remove da tabela desafio_resgates também
+          desc_item = dados_atuais["descricao"]
+          val_item = float(dados_atuais["valor"])
+          
+          cursor.execute("DELETE FROM desafio_resgates WHERE valor = %s", (val_item,))
+          cursor.execute("DELETE FROM lancamentos WHERE id = %s", (int(id_str),))
+          
           conexao.commit()
           cursor.close()
           conexao.close()
-          st.success("Lançamento excluído com sucesso!")
+          st.success("Lançamento e resgate excluídos com sucesso!")
           st.rerun()
         except Exception as e:
           st.error(f"Erro ao excluir: {e}")
   else:
     st.info(
-        f"Nenhum lançamento encontrado para gerenciar na competência"
-        f" {competencia_selecionada}."
+        f"Nenhum lançamento encontrado na competência {competencia_selecionada}."
     )
 
-  # --- QUADRO DE LANÇAMENTOS FUTUROS NO FINAL DA PÁGINA ---
   st.divider()
   st.markdown("### ⏳ Lançamentos Futuros e Parcelamentos a Pagar")
 
   if not df_futuros.empty:
-    st.info(
-        "Aqui estão reunidos seus compromissos manuais futuros e as parcelas"
-        " ativas das suas dívidas com base nos dias de vencimento."
-    )
-
     tabela_futuros = df_futuros[
         ["id", "data", "tipo", "categoria", "descricao", "valor"]
     ].copy()
@@ -381,23 +351,7 @@ if not df.empty:
     ]
 
     st.dataframe(tabela_futuros.reset_index(drop=True), use_container_width=True)
-
-    total_futuro_valor = (
-        df_futuros[df_futuros["tipo"] == "Despesa"]["valor"].sum()
-        - df_futuros[df_futuros["tipo"] == "Receita"]["valor"].sum()
-    )
-    total_fut_fmt = (
-        f"R$ {abs(total_futuro_valor):,.2f}"
-        .replace(",", "X")
-        .replace(".", ",")
-        .replace("X", ".")
-    )
-    st.metric(
-        label="📉 Impacto Líquido dos Próximos Vencimentos Listados",
-        value=total_fut_fmt,
-    )
   else:
     st.info("Não há lançamentos futuros ou parcelamentos ativos cadastrados.")
-
 else:
   st.info("Nenhum lançamento cadastrado no banco de dados.")
