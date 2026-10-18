@@ -4,12 +4,12 @@ import psycopg2
 import streamlit as st
 from utils import aplicar_estilo_moderno
 
-st.set_page_config(page_title="Título da Página", layout="wide")
-aplicar_estilo_moderno()  # <-- Essencial em cada página
-
 st.set_page_config(
-    page_title="Gerenciar Lançamentos — Painel do Marcelo", page_icon="✏️"
+    page_title="Gerenciar Lançamentos — Painel do Marcelo",
+    page_icon="✏️",
+    layout="wide",
 )
+aplicar_estilo_moderno()  # <-- Essencial em cada página
 
 
 def obter_conexao():
@@ -48,19 +48,27 @@ def configurar_sidebar_competencia(conexao, prefixo_key="global"):
   except Exception:
     df_a = pd.DataFrame(columns=["data"])
 
-  for df_item in [df_l, df_a]:
+  try:
+    df_r = pd.read_sql_query("SELECT data FROM desafio_resgates", conexao)
+  except Exception:
+    df_r = pd.DataFrame(columns=["data"])
+
+  for df_item in [df_l, df_a, df_r]:
     if not df_item.empty and "data" in df_item.columns:
       res = df_item["data"].apply(extrair_competencia)
       df_item["competencia"] = [x[0] for x in res]
       df_item["comp_ordem"] = [x[1] for x in res]
 
-  if not df_l.empty or not df_a.empty:
+  if not df_l.empty or not df_a.empty or not df_r.empty:
     mapeamento_comps = pd.concat([
         df_l[["competencia", "comp_ordem"]]
         if not df_l.empty
         else pd.DataFrame(columns=["competencia", "comp_ordem"]),
         df_a[["competencia", "comp_ordem"]]
         if not df_a.empty
+        else pd.DataFrame(columns=["competencia", "comp_ordem"]),
+        df_r[["competencia", "comp_ordem"]]
+        if not df_r.empty
         else pd.DataFrame(columns=["competencia", "comp_ordem"]),
     ]).drop_duplicates()
 
@@ -109,8 +117,8 @@ def configurar_sidebar_competencia(conexao, prefixo_key="global"):
 st.title("💰 Controle Financeiro — Painel do Marcelo")
 st.subheader("✏️ Gerenciar, Editar ou Excluir Lançamentos")
 st.write(
-    "Gerencie, edite ou exclua seus lançamentos manuais e acompanhe seus"
-    " compromissos."
+    "Gerencie, edite ou exclua seus lançamentos manuais (incluindo resgates"
+    " integrados) e acompanhe seus compromissos."
 )
 
 try:

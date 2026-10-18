@@ -4,18 +4,115 @@ import psycopg2
 import streamlit as st
 from utils import aplicar_estilo_moderno
 
-st.set_page_config(page_title="Título da Página", layout="wide")
-aplicar_estilo_moderno()  # <-- Essencial em cada página
-
 st.set_page_config(
     page_title="Novo Lançamento - Marcelo", page_icon="📝", layout="wide"
 )
+aplicar_estilo_moderno()  # <-- Essencial em cada página
 
 
+# --- FUNÇÕES AUTOSSUFICIENTES ---
 def obter_conexao():
   return psycopg2.connect(st.secrets["DATABASE_URL"])
 
 
+def extrair_competencia(data_str):
+  try:
+    dt = pd.to_datetime(data_str, format="%d/%m/%Y", errors="coerce")
+    if pd.isna(dt):
+      dt = pd.to_datetime(data_str, errors="coerce")
+    if pd.notna(dt):
+      return dt.strftime("%m/%Y"), dt.strftime("%Y-%m")
+  except Exception:
+    pass
+  return "Indefinido", "9999-99"
+
+
+def configurar_sidebar_competencia(conexao, prefixo_key="global"):
+  mes_atual_sistema = datetime.now().strftime("%m/%Y")
+  competencias_disponiveis = [mes_atual_sistema]
+  mapeamento_comps = pd.DataFrame(
+      {
+          "competencia": [mes_atual_sistema],
+          "comp_ordem": [datetime.now().strftime("%Y-%m")],
+      }
+  )
+
+  try:
+    df_l = pd.read_sql_query("SELECT data FROM lancamentos", conexao)
+  except Exception:
+    df_l = pd.DataFrame(columns=["data"])
+
+  try:
+    df_a = pd.read_sql_query("SELECT data FROM desafio_aportes", conexao)
+  except Exception:
+    df_a = pd.DataFrame(columns=["data"])
+
+  try:
+    df_r = pd.read_sql_query("SELECT data FROM desafio_resgates", conexao)
+  except Exception:
+    df_r = pd.DataFrame(columns=["data"])
+
+  for df in [df_l, df_a, df_r]:
+    if not df.empty and "data" in df.columns:
+      res = df["data"].apply(extrair_competencia)
+      df["competencia"] = [x[0] for x in res]
+      df["comp_ordem"] = [x[1] for x in res]
+
+  if not df_l.empty or not df_a.empty or not df_r.empty:
+    mapeamento_comps = pd.concat([
+        df_l[["competencia", "comp_ordem"]]
+        if not df_l.empty
+        else pd.DataFrame(columns=["competencia", "comp_ordem"]),
+        df_a[["competencia", "comp_ordem"]]
+        if not df_a.empty
+        else pd.DataFrame(columns=["competencia", "comp_ordem"]),
+        df_r[["competencia", "comp_ordem"]]
+        if not df_r.empty
+        else pd.DataFrame(columns=["competencia", "comp_ordem"]),
+    ]).drop_duplicates()
+
+    mapeamento_comps = mapeamento_comps[
+        mapeamento_comps["competencia"] != "Indefinido"
+    ].sort_values("comp_ordem", ascending=False)
+
+    if not mapeamento_comps.empty:
+      competencias_disponiveis = mapeamento_comps["competencia"].tolist()
+
+  if mes_atual_sistema not in competencias_disponiveis:
+    competencias_disponiveis.insert(0, mes_atual_sistema)
+
+  key_selectbox = f"selectbox_competencia_{prefixo_key}"
+
+  if key_selectbox not in st.session_state:
+    st.session_state[key_selectbox] = mes_atual_sistema
+
+  try:
+    index_atual = competencias_disponiveis.index(st.session_state[key_selectbox])
+  except ValueError:
+    index_atual = 0
+
+  st.sidebar.markdown("---")
+  st.sidebar.header("📅 Filtro de Competência")
+  competencia_selecionada = st.sidebar.selectbox(
+      "Selecione o Mês/Ano de Referência",
+      options=competencias_disponiveis,
+      index=index_atual,
+      key=key_selectbox,
+  )
+
+  ordem_sel = (
+      mapeamento_comps[
+          mapeamento_comps["competencia"] == competencia_selecionada
+      ]["comp_ordem"].values[0]
+      if not mapeamento_comps.empty
+      and competencia_selecionada in mapeamento_comps["competencia"].values
+      else datetime.now().strftime("%Y-%m")
+  )
+
+  return competencia_selecionada, ordem_sel
+
+
+# Inicializar tabela no banco se não existir
 def garantir_tabelas():
   try:
     conexao = obter_conexao()
@@ -39,107 +136,34 @@ def garantir_tabelas():
 
 garantir_tabelas()
 
-
-# --- FUNÇÃO PARA GERENCIAR A COMPETÊNCIA GLOBALMENTE NA BARRA LATERAL ---
-def configurar_sidebar_competencia():
-  try:
-    conexao = obter_conexao()
-    df_l = pd.read_sql_query("SELECT data FROM lancamentos", conexao)
-    df_a = pd.read_sql_query("SELECT data FROM desafio_aportes", conexao)
-    conexao.close()
-  except Exception:
-    df_l = pd.DataFrame(columns=["data"])
-    df_a = pd.DataFrame(columns=["data"])
-
-  def extrair_competencia(data_str):
-    try:
-      dt = pd.to_datetime(data_str, format="%d/%m/%Y", errors="coerce")
-      if pd.isna(dt):
-        dt = pd.to_datetime(data_str, errors="coerce")
-      if pd.notna(dt):
-        return dt.strftime("%m/%Y"), dt.strftime("%Y-%m")
-    except Exception:
-      pass
-    return "Indefinido", "9999-99"
-
-  for df in [df_l, df_a]:
-    if not df.empty and "data" in df.columns:
-      res = df["data"].apply(extrair_competencia)
-      df["competencia"] = [x[0] for x in res]
-      df["comp_ordem"] = [x[1] for x in res]
-    else:
-      df["competencia"] = "Indefinido"
-      df["comp_ordem"] = "9999-99"
-
-  mapeamento_comps = pd.concat([
-      df_l[["competencia", "comp_ordem"]],
-      df_a[["competencia", "comp_ordem"]],
-  ]).drop_duplicates()
-
-  mapeamento_comps = mapeamento_comps[
-      mapeamento_comps["competencia"] != "Indefinido"
-  ].sort_values("comp_ordem", ascending=False)
-
-  competencias_disponiveis = mapeamento_comps["competencia"].tolist()
-  mes_atual_sistema = datetime.now().strftime("%m/%Y")
-
-  if not competencias_disponiveis:
-    competencias_disponiveis = [mes_atual_sistema]
-
-  if "competencia_selecionada" not in st.session_state:
-    st.session_state["competencia_selecionada"] = (
-        mes_atual_sistema
-        if mes_atual_sistema in competencias_disponiveis
-        else competencias_disponiveis[0]
-    )
-
-  try:
-    index_atual = competencias_disponiveis.index(
-        st.session_state["competencia_selecionada"]
-    )
-  except ValueError:
-    index_atual = 0
-
-  st.sidebar.header("📅 Competência (Mês/Ano)")
-  st.session_state["competencia_selecionada"] = st.sidebar.selectbox(
-      "Selecione o Mês de Referência",
-      options=competencias_disponiveis,
-      index=index_atual,
-      key="selectbox_competencia",
+# 1. Chamar o filtro de competência na barra lateral
+try:
+  conexao_temp = obter_conexao()
+  competencia_selecionada, ordem_selecionada = configurar_sidebar_competencia(
+      conexao_temp, prefixo_key="novo_lancamento"
   )
-
-  ordem_sel = (
-      mapeamento_comps[
-          mapeamento_comps["competencia"]
-          == st.session_state["competencia_selecionada"]
-      ]["comp_ordem"].values[0]
-      if st.session_state["competencia_selecionada"]
-      in mapeamento_comps["competencia"].values
-      else datetime.now().strftime("%Y-%m")
-  )
-
-  return st.session_state["competencia_selecionada"], ordem_sel
-
-
-# Chamar o seletor na barra lateral
-competencia_selecionada, ordem_selecionada = configurar_sidebar_competencia()
+  conexao_temp.close()
+except Exception:
+  competencia_selecionada = datetime.now().strftime("%m/%Y")
 
 st.title("💰 Controle Financeiro — Painel do Marcelo")
-st.subheader("📝 Novo Lançamento & Registo de Caixa")
+st.subheader("📝 Novo Lançamento & Registro de Caixa")
 st.write(
-    "Registe as suas receitas e despesas do dia a dia com abatimento automático"
-    " dos aportes de investimentos."
+    "Registre as suas receitas e despesas do dia a dia com abatimento automático"
+    " dos aportes e integração dos resgates de investimentos."
 )
 
-# Formulário de Novo Lançamento
+# Formulário organizado em 3 colunas
 with st.form("form_novo_lancamento", clear_on_submit=True):
   col1, col2, col3 = st.columns(3)
+
   with col1:
     data_lancamento = st.text_input(
         "Data do Lançamento (DD/MM/AAAA)",
         value=datetime.now().strftime("%d/%m/%Y"),
     )
     tipo = st.selectbox("Tipo", ["Despesa", "Receita"])
+
   with col2:
     categoria = st.text_input(
         "Categoria (Ex: Alimentação, Transporte...)", value=""
@@ -147,6 +171,7 @@ with st.form("form_novo_lancamento", clear_on_submit=True):
     valor = st.number_input(
         "Valor (R$)", min_value=0.0, value=0.0, step=10.0, format="%.2f"
     )
+
   with col3:
     descricao = st.text_input("Descrição / Estabelecimento", value="")
 
@@ -164,7 +189,7 @@ with st.form("form_novo_lancamento", clear_on_submit=True):
       conexao.commit()
       cursor.close()
       conexao.close()
-      st.success("Lançamento guardado com sucesso!")
+      st.success("Lançamento salvo com sucesso!")
       st.rerun()
     except ValueError:
       st.error("Data inválida. Utilize o formato DD/MM/AAAA.")
@@ -173,11 +198,12 @@ with st.form("form_novo_lancamento", clear_on_submit=True):
 
 st.divider()
 
-# Carregamento robusto dos dados (Lançamentos e Aportes)
+# Carregamento robusto dos dados (Lançamentos, Aportes e Resgates)
 df_lancamentos = pd.DataFrame(
     columns=["id", "data", "tipo", "categoria", "descricao", "valor"]
 )
 df_aportes = pd.DataFrame(columns=["id", "data", "valor", "local_aplicacao"])
+df_resgates = pd.DataFrame(columns=["id", "data", "valor", "local_origem", "motivo"])
 
 try:
   conexao = obter_conexao()
@@ -190,70 +216,85 @@ try:
 
   try:
     df_aportes = pd.read_sql_query(
-        "SELECT id, data, valor, local_aplicacao FROM desafio_aportes",
-        conexao,
+        "SELECT id, data, valor, local_aplicacao FROM desafio_aportes", conexao
     )
   except Exception:
     conexao.rollback()
+
+  try:
+    df_resgates = pd.read_sql_query(
+        "SELECT id, data, valor, local_origem, motivo FROM desafio_resgates", conexao
+    )
+  except Exception:
+    conexao.rollback()
+
   conexao.close()
 except Exception as e:
   st.error(f"Erro ao carregar dados do banco: {e}")
 
-
-# Função para extrair competência para filtragem
-def extrair_competencia(data_str):
-  try:
-    dt = pd.to_datetime(data_str, format="%d/%m/%Y", errors="coerce")
-    if pd.isna(dt):
-      dt = pd.to_datetime(data_str, errors="coerce")
-    if pd.notna(dt):
-      return dt.strftime("%m/%Y"), dt.strftime("%Y-%m")
-  except Exception:
-    pass
-  return "Indefinido", "9999-99"
-
-
+# Tratamento e limpeza dos Lançamentos
 if not df_lancamentos.empty and "data" in df_lancamentos.columns:
   res_lanc = df_lancamentos["data"].apply(extrair_competencia)
   df_lancamentos["competencia"] = [x[0] for x in res_lanc]
-  df_lancamentos["comp_ordem"] = [x[1] for x in res_lanc]
-  df_lancamentos["valor_num"] = (
-      pd.to_numeric(df_lancamentos["valor"], errors="coerce").fillna(0.0)
-  )
+  df_lancamentos["valor_num"] = pd.to_numeric(
+      df_lancamentos["valor"], errors="coerce"
+  ).fillna(0.0)
   df_lancamentos["tipo_clean"] = df_lancamentos["tipo"].str.strip().str.lower()
 else:
   df_lancamentos["competencia"] = "Indefinido"
-  df_lancamentos["comp_ordem"] = "9999-99"
   df_lancamentos["tipo_clean"] = ""
 
+# Tratamento dos Aportes na competência
 if not df_aportes.empty and "data" in df_aportes.columns:
   res_ap = df_aportes["data"].apply(extrair_competencia)
   df_aportes["competencia"] = [x[0] for x in res_ap]
-  df_aportes["comp_ordem"] = [x[1] for x in res_ap]
-  df_aportes["valor_num"] = (
-      pd.to_numeric(df_aportes["valor"], errors="coerce").fillna(0.0)
-  )
+  df_aportes["valor_num"] = pd.to_numeric(
+      df_aportes["valor"], errors="coerce"
+  ).fillna(0.0)
+  df_aportes_mes = df_aportes[df_aportes["competencia"] == competencia_selecionada]
+  total_aportes_mes = df_aportes_mes["valor_num"].sum() if not df_aportes_mes.empty else 0.0
 else:
-  df_aportes["competencia"] = "Indefinido"
-  df_aportes["comp_ordem"] = "9999-99"
+  total_aportes_mes = 0.0
 
-# Filtrar apenas para o mês de competência selecionado
-df_lanc_mes = (
-    df_lancamentos[
-        df_lancamentos["competencia"] == competencia_selecionada
-    ].copy()
-    if not df_lancamentos.empty
-    else pd.DataFrame()
-)
-df_aportes_mes = (
-    df_aportes[df_aportes["competencia"] == competencia_selecionada].copy()
-    if not df_aportes.empty
-    else pd.DataFrame()
-)
+# Tratamento dos Resgates na competência (para unificar na visão de Lançamentos)
+if not df_resgates.empty and "data" in df_resgates.columns:
+  res_resg = df_resgates["data"].apply(extrair_competencia)
+  df_resgates["competencia"] = [x[0] for x in res_resg]
+  df_resgates["valor_num"] = pd.to_numeric(
+      df_resgates["valor"], errors="coerce"
+  ).fillna(0.0)
+  df_resgates_mes = df_resgates[df_resgates["competencia"] == competencia_selecionada]
+else:
+  df_resgates_mes = pd.DataFrame()
 
-total_aportes_mes = (
-    df_aportes_mes["valor_num"].sum() if not df_aportes_mes.empty else 0.0
-)
+# Filtrar lançamentos da competência selecionada
+if not df_lancamentos.empty:
+  df_lanc_mes = df_lancamentos[
+      df_lancamentos["competencia"] == competencia_selecionada
+  ].copy()
+else:
+  df_lanc_mes = pd.DataFrame(columns=df_lancamentos.columns)
+
+# Se houver resgates e eles ainda não estiverem na tabela de lançamentos, concatena para exibição consolidada
+if not df_resgates_mes.empty:
+  df_resg_conv = pd.DataFrame({
+      "id": [f"RESG-{r_id}" for r_id in df_resgates_mes["id"]],
+      "data": df_resgates_mes["data"],
+      "tipo": ["Receita"] * len(df_resgates_mes),
+      "categoria": ["Resgate"] * len(df_resgates_mes),
+      "descricao": [f"Resgate {loc}" for loc in df_resgates_mes["local_origem"]],
+      "valor": df_resgates_mes["valor"],
+      "competencia": df_resgates_mes["competencia"],
+      "valor_num": df_resgates_mes["valor_num"],
+      "tipo_clean": ["receita"] * len(df_resgates_mes)
+  })
+  
+  # Evita duplicar caso o resgate já tenha sido gravado diretamente em 'lancamentos'
+  resgates_existentes_desc = df_lanc_mes[df_lanc_mes["categoria"] == "Resgate"]["descricao"].tolist() if not df_lanc_mes.empty else []
+  df_resg_conv = df_resg_conv[~df_resg_conv["descricao"].isin(resgates_existentes_desc)]
+  
+  if not df_resg_conv.empty:
+    df_lanc_mes = pd.concat([df_lanc_mes, df_resg_conv], ignore_index=True)
 
 total_receitas = (
     df_lanc_mes[
@@ -273,6 +314,7 @@ total_gastos = (
     else 0.0
 )
 
+# Saldo da Competência considerando Receitas - Gastos - Aportes do Mês
 saldo_atual = total_receitas - total_gastos - total_aportes_mes
 
 
@@ -281,16 +323,17 @@ def fmt_moeda(v):
 
 
 st.subheader(
-    f"📊 Resumo da Competência: {competencia_selecionada} (Créditos, Débitos e"
-    " Aportes)"
+    f"📊 Resumo da Competência: {competencia_selecionada} (Créditos, Débitos e Aportes)"
 )
 c1, c2, c3, c4 = st.columns(4)
 c1.metric("Total Créditos", fmt_moeda(total_receitas))
 c2.metric("Total Débitos", fmt_moeda(total_gastos))
-c3.metric("Total em Aportes", fmt_moeda(total_aportes_mes))
+c3.metric("Total em Aportes (Mês)", fmt_moeda(total_aportes_mes))
 
 if saldo_atual >= 0:
-  c4.metric("Saldo da Competência", fmt_moeda(saldo_atual), delta="No Azul 💙")
+  c4.metric(
+      "Saldo da Competência", fmt_moeda(saldo_atual), delta="No Azul 💙"
+  )
 else:
   c4.metric(
       "Saldo da Competência",
@@ -301,22 +344,12 @@ else:
 
 st.divider()
 
-st.subheader(
-    f"Histórico de Lançamentos da Competência: {competencia_selecionada}"
-)
+st.subheader(f"Histórico de Lançamentos da Competência: {competencia_selecionada}")
 if not df_lanc_mes.empty:
   df_exibicao = df_lanc_mes.drop(
-      columns=[
-          "tipo_clean",
-          "valor_num",
-          "competencia",
-          "comp_ordem",
-          "local_aplicacao",
-          "is_aporte",
-      ],
-      errors="ignore",
+      columns=["tipo_clean", "valor_num", "competencia"], errors="ignore"
   )
-  df_exibicao["valor"] = df_exibicao["valor"].apply(fmt_moeda)
+  df_exibicao["valor"] = df_exibicao["valor_num"].apply(fmt_moeda)
   st.dataframe(df_exibicao.set_index("id"), use_container_width=True)
 else:
-  st.info("Nenhum lançamento registado nesta competência.")
+  st.info("Nenhum lançamento registrado nesta competência.")
