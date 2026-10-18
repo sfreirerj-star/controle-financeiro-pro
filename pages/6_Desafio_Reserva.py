@@ -471,14 +471,24 @@ with aba_resgate:
         datetime.strptime(data_resgate.strip(), "%d/%m/%Y")
         conexao = obter_conexao()
         cursor = conexao.cursor()
+        
+        # 1. Registra no Módulo de Resgates (Abate do Patrimônio Guardado)
         cursor.execute(
             "INSERT INTO desafio_resgates (data, valor, local_origem, motivo) VALUES (%s, %s, %s, %s)",
             (data_resgate.strip(), valor_resgate, origem_final, motivo_resgate.strip()),
         )
+
+        # 2. Registra Automaticamente nos Lançamentos como Crédito (Receita)
+        desc_lancamento = f"Resgate {origem_final}" if not motivo_resgate.strip() else f"Resgate {origem_final} - {motivo_resgate.strip()}"
+        cursor.execute(
+            "INSERT INTO lancamentos (data, tipo, categoria, descricao, valor) VALUES (%s, %s, %s, %s, %s)",
+            (data_resgate.strip(), "Receita", "Resgate", desc_lancamento, valor_resgate),
+        )
+
         conexao.commit()
         cursor.close()
         conexao.close()
-        st.success("Resgate registrado com sucesso!")
+        st.success("Resgate registrado com sucesso e integrado aos créditos mensais!")
         st.rerun()
       except ValueError:
         st.error("Data inválida. Utilize o formato DD/MM/AAAA.")
@@ -524,7 +534,6 @@ with aba_resgate:
         st.error(f"Erro ao excluir resgate: {e}")
   else:
     st.info("Nenhum resgate registrado até o momento.")
-
 
 # --- ABA 3: SIMULADOR DE ANTECIPAÇÃO DE METAS ---
 with aba_simulador:
