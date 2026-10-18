@@ -27,11 +27,12 @@ def obter_conexao():
   return psycopg2.connect(st.secrets["DATABASE_URL"])
 
 
-def garantir_tabelas():
+def garantir_tabelas_e_sincronizacao():
   try:
     conexao = obter_conexao()
     cursor = conexao.cursor()
-    # Tabela de Aportes
+    
+    # 1. Criação das tabelas se não existirem
     cursor.execute("""
             CREATE TABLE IF NOT EXISTS desafio_aportes (
                 id SERIAL PRIMARY KEY,
@@ -40,7 +41,6 @@ def garantir_tabelas():
                 local_aplicacao TEXT NOT NULL
             )
         """)
-    # Tabela de Resgates de Aportes (Novo Módulo)
     cursor.execute("""
             CREATE TABLE IF NOT EXISTS desafio_resgates (
                 id SERIAL PRIMARY KEY,
@@ -51,13 +51,68 @@ def garantir_tabelas():
             )
         """)
     conexao.commit()
+
+    # 2. Sincronização Inteligente Bidirecional (Garante que resgates e aportes reflitam em lancamentos sem duplicar)
+    df_r = pd.read_sql_query("SELECT id, data, valor, local_origem, motivo FROM desafio_resgates", conexao)
+    df_l = pd.read_sql_query("SELECT id, data, descricao, valor, categoria FROM lancamentos WHERE categoria = 'Resgate'", conexao)
+
+    # Sincroniza Resgates de 'lancamentos' para 'desafio_resgates'
+    if not df_l.empty:
+      for _, row_l in df_l.iterrows():
+        desc = str(row_l["descricao"])
+        val_l = float(row_l["valor"])
+        dt_l = row_l["data"]
+
+        local_encontrado = "Banco Itaú" if "Itaú" in desc else "Outro"
+        for banco in ["Nomad", "Sofisa Direto", "Banco Inter", "Nubank", "Tesouro Selic"]:
+          if banco.lower() in desc.lower():
+            local_encontrado = banco
+            break
+
+        motivo_encontrado = ""
+        if "-" in desc:
+          partes = desc.split("-", 1)
+          motivo_encontrado = partes[1].strip()
+
+        existe_r = False
+        if not df_r.empty:
+          existe_r = not df_r[(abs(df_r["valor"] - val_l) < 0.05) & (df_r["data"] == dt_l)].empty
+
+        if not existe_r:
+          cursor.execute(
+              "INSERT INTO desafio_resgates (data, valor, local_origem, motivo) VALUES (%s, %s, %s, %s)",
+              (dt_l, val_l, local_encontrado, motivo_encontrado),
+          )
+          conexao.commit()
+
+    # Sincroniza Resgates de 'desafio_resgates' para 'lancamentos' caso falte
+    df_r_atual = pd.read_sql_query("SELECT id, data, valor, local_origem, motivo FROM desafio_resgates", conexao)
+    df_l_atual = pd.read_sql_query("SELECT descricao, valor FROM lancamentos WHERE categoria = 'Resgate'", conexao)
+
+    if not df_r_atual.empty:
+      for _, row in df_r_atual.iterrows():
+        loc = row["local_origem"]
+        mot = str(row["motivo"]).strip() if pd.notna(row["motivo"]) else ""
+        desc_esperada = f"Resgate {loc}" if not mot else f"Resgate {loc} - {mot}"
+        
+        existe_l = False
+        if not df_l_atual.empty:
+          existe_l = not df_l_atual[(df_l_atual["descricao"] == desc_esperada) & (abs(df_l_atual["valor"] - float(row["valor"])) < 0.01)].empty
+        
+        if not existe_l:
+          cursor.execute(
+              "INSERT INTO lancamentos (data, tipo, categoria, descricao, valor) VALUES (%s, %s, %s, %s, %s)",
+              (row["data"], "Receita", "Resgate", desc_esperada, float(row["valor"])),
+          )
+          conexao.commit()
+
     cursor.close()
     conexao.close()
-  except Exception:
-    pass
+  except Exception as e:
+    print(f"Erro na sincronização: {e}")
 
 
-garantir_tabelas()
+garantir_tabelas_e_sincronizacao()
 
 st.title("💰 Controle Financeiro — Painel do Marcelo")
 st.subheader("🎯 Desafio Personalizado & Simulador de Antecipação")
@@ -232,11 +287,13 @@ with aba_desafio:
         datetime.strptime(data_aporte.strip(), "%d/%m/%Y")
         conexao = obter_conexao()
         cursor = conexao.cursor()
+        
+        # 1. Salva na tabela do desafio
         cursor.execute(
-            "INSERT INTO desafio_aportes (data, valor, local_aplicacao) VALUES"
-            " (%s, %s, %s)",
+            "INSERT INTO desafio_aportes (data, valor, local_aplicacao) VALUES (%s, %s, %s)",
             (data_aporte.strip(), valor_aporte, local_aporte),
         )
+        
         conexao.commit()
         cursor.close()
         conexao.close()
@@ -363,10 +420,8 @@ with aba_desafio:
 
   st.markdown("### 🏦 Saldo e Distribuição por Banco / Corretora (Líquido)")
   if not df_aportes.empty:
-    # Agrupa aportes por instituição
     df_resumo_aportes = df_aportes.groupby("local_aplicacao")["valor_num"].sum().reset_index()
     
-    # Se houver resgates, subtrai proporcionalmente ou por local (opcional: aqui unificamos o saldo líquido consolidado)
     if not df_resgates.empty:
       df_resumo_resgates = df_resgates.groupby("local_origem")["valor_num"].sum().reset_index()
       df_resumo_bancos = pd.merge(df_resumo_aportes, df_resumo_resgates, left_on="local_aplicacao", right_on="local_origem", how="left").fillna(0)
@@ -415,38 +470,6 @@ with aba_resgate:
   st.write(
       "Registre retiradas ou resgates parciais/totais realizados nas suas contas e investimentos."
   )
-
-  # Função para garantir a sincronização de resgates antigos na tabela de lançamentos
-  def sincronizar_resgates_antigos():
-    try:
-      conexao = obter_conexao()
-      cursor = conexao.cursor()
-      df_r = pd.read_sql_query("SELECT id, data, valor, local_origem, motivo FROM desafio_resgates", conexao)
-      df_l = pd.read_sql_query("SELECT descricao, valor FROM lancamentos WHERE categoria = 'Resgate'", conexao)
-      
-      if not df_r.empty:
-        for _, row in df_r.iterrows():
-          loc = row["local_origem"]
-          mot = str(row["motivo"]).strip() if pd.notna(row["motivo"]) else ""
-          desc_esperada = f"Resgate {loc}" if not mot else f"Resgate {loc} - {mot}"
-          
-          # Se este resgate ainda não existir na tabela lancamentos, insere
-          existe = False
-          if not df_l.empty:
-            existe = not df_l[(df_l["descricao"] == desc_esperada) & (abs(df_l["valor"] - float(row["valor"])) < 0.01)].empty
-          
-          if not existe:
-            cursor.execute(
-                "INSERT INTO lancamentos (data, tipo, categoria, descricao, valor) VALUES (%s, %s, %s, %s, %s)",
-                (row["data"], "Receita", "Resgate", desc_esperada, float(row["valor"])),
-            )
-        conexao.commit()
-      cursor.close()
-      conexao.close()
-    except Exception:
-      pass
-
-  sincronizar_resgates_antigos()
 
   with st.form("form_novo_resgate"):
     col_r1, col_r2, col_r3 = st.columns(3)
@@ -510,7 +533,7 @@ with aba_resgate:
             (data_resgate.strip(), valor_resgate, origem_final, motivo_resgate.strip()),
         )
 
-        # 2. Registra diretamente na tabela de Lançamentos
+        # 2. Registra diretamente na tabela de Lançamentos integrando aos créditos mensais
         desc_lancamento = f"Resgate {origem_final}" if not motivo_resgate.strip() else f"Resgate {origem_final} - {motivo_resgate.strip()}"
         cursor.execute(
             "INSERT INTO lancamentos (data, tipo, categoria, descricao, valor) VALUES (%s, %s, %s, %s, %s)",
@@ -556,7 +579,6 @@ with aba_resgate:
         conexao = obter_conexao()
         cursor = conexao.cursor()
         
-        # Puxa os dados do resgate antes de excluir para apagar também de lancamentos
         cursor.execute("SELECT data, valor, local_origem, motivo FROM desafio_resgates WHERE id = %s", (int(id_resgate_excluir),))
         row_del = cursor.fetchone()
         
@@ -577,6 +599,7 @@ with aba_resgate:
         st.error(f"Erro ao excluir resgate: {e}")
   else:
     st.info("Nenhum resgate registrado até o momento.")
+
 # --- ABA 3: SIMULADOR DE ANTECIPAÇÃO DE METAS ---
 with aba_simulador:
   st.markdown("### 🎯 Simulador de Antecipação de Metas")
