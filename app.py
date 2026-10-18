@@ -209,6 +209,14 @@ ordem_selecionada = (
     if competencia_selecionada in mapeamento_comps["competencia"].values
     else datetime.now().strftime("%Y-%m")
 )
+# DIAGNÓSTICO TEMPORÁRIO DE RESGATES
+try:
+  conn = obter_conexao()
+  df_diag = pd.read_sql_query("SELECT * FROM resgates LIMIT 5", conn)
+  conn.close()
+  st.write("🔍 **Estrutura da tabela de resgates:**", df_diag)
+except Exception as err:
+  st.error(f"Erro ao ler tabela resgates: {err}")
 
 # --- CORPO DA PÁGINA PRINCIPAL ---
 st.title("💰 Controle Financeiro — Painel do Marcelo")
