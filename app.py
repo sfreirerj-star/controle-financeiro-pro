@@ -302,7 +302,13 @@ def calcular_saldo_ate_competencia(df_lan, df_ap, df_res, ordem_alvo):
                 + df_ap[df_ap["comp_ordem"] != "9999-99"][
                     "comp_ordem"
                 ].unique().tolist()
-                + (df_res[df_res["comp_ordem"] != "9999-99"]["comp_ordem"].unique().tolist() if not df_res.empty and "comp_ordem" in df_res.columns else [])
+                + (
+                    df_res[df_res["comp_ordem"] != "9999-99"][
+                        "comp_ordem"
+                    ].unique().tolist()
+                    if not df_res.empty and "comp_ordem" in df_res.columns
+                    else []
+                )
             )
         )
     )
@@ -326,20 +332,17 @@ def calcular_saldo_ate_competencia(df_lan, df_ap, df_res, ordem_alvo):
             )
         ]["valor"].sum()
 
-       apo_c = (
+        apo_c = (
             df_ap[df_ap["comp_ordem"] == ord_comp]["valor_num"].sum()
-            if not df_ap.empty and "valor_num" in df_ap.columns else 0.0
-        )
-        res_c = (
-            df_res[df_res["comp_ordem"] == ord_comp]["valor_num"].sum()
-            if not df_res.empty and "valor_num" in df_res.columns else 0.0
+            if not df_ap.empty and "valor_num" in df_ap.columns
+            else 0.0
         )
 
-        saldo_acumulado += rec - gas - (apo_c - res_c)
+        # O impacto no caixa anterior considera apenas os aportes que saíram do bolso
+        saldo_acumulado += rec - gas - apo_c
     return saldo_acumulado
   except Exception:
     return 0.0
-
 
 # Função para calcular o Patrimônio Guardado Acumulado EXATAMENTE até o mês selecionado
 def calcular_patrimonio_guardado_ate(df_ap, df_res, ordem_alvo):
@@ -618,9 +621,11 @@ if todas_ordens:
         if not df_resgates.empty and "valor_num" in df_resgates.columns else 0.0
     )
 
+    # Investimento líquido exibido apenas para referência patrimonial na tabela
     investimento_liquido_c = apo_c - res_c
 
-    saldo_final_c = acum_saldo_loop + rec_c - gas_c - investimento_liquido_c
+    # O saldo final contábil do mês no balancete considera o aporte como saída de caixa (resgate já entrou em rec_c)
+    saldo_final_c = acum_saldo_loop + rec_c - gas_c - apo_c
 
     dados_balancete.append({
         "Competência": comp_formatada,
