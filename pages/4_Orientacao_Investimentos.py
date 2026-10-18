@@ -19,8 +19,13 @@ def obter_conexao():
   return psycopg2.connect(st.secrets["DATABASE_URL"])
 
 
-def extrair_competencia(data_str):
+def extrair_competencia(data_val):
+  if pd.isna(data_val) or data_val is None:
+    return "Indefinido", "9999-99"
   try:
+    if isinstance(data_val, (pd.Timestamp, datetime)):
+      return data_val.strftime("%m/%Y"), data_val.strftime("%Y-%m")
+    data_str = str(data_val).strip()
     dt = pd.to_datetime(data_str, format="%d/%m/%Y", errors="coerce")
     if pd.isna(dt):
       dt = pd.to_datetime(data_str, errors="coerce")
@@ -111,26 +116,27 @@ def configurar_sidebar_competencia(conexao, prefixo_key="global"):
 st.title("💰 Controle Financeiro — Painel do Marcelo")
 st.subheader("💡 Consultoria Inteligente de Bolso - Diagnóstico Financeiro")
 st.write(
-    "Análise automática da sua saúde financeira com base nos seus ganhos,"
-    " compromissos mensais e dívidas ativas filtrados por competência."
+    "Análise automática da sua saúde financeira com base no saldo acumulado,"
+    " ganhos, compromissos mensais e dívidas ativas filtrados por competência."
 )
 
-# Configuração da barra lateral e obtenção da competência selecionada
+# Configuração da barra lateral e obtenção da competência selecionada e ordem
 try:
   conexao_sidebar = obter_conexao()
-  competencia_selecionada, _ = configurar_sidebar_competencia(
+  competencia_selecionada, ordem_selecionada = configurar_sidebar_competencia(
       conexao_sidebar, prefixo_key="diagnostico_financeiro"
   )
   conexao_sidebar.close()
 except Exception:
   competencia_selecionada = datetime.now().strftime("%m/%Y")
+  ordem_selecionada = datetime.now().strftime("%Y-%m")
 
-# Carrega os dados do banco (Lançamentos e Dívidas)
+# Carrega os dados do banco (Lançamentos, Aportes, Resgates e Dívidas)
 try:
   conexao = obter_conexao()
-  df_lancamentos = pd.read_sql_query(
-      "SELECT tipo, valor, data FROM lancamentos", conexao
-  )
+  df_lancamentos = pd.read_sql_query("SELECT * FROM lancamentos", conexao)
+  df_aportes = pd.read_sql_query("SELECT data, valor, local_aplicacao FROM desafio_aportes", conexao)
+  df_resgates = pd.read_sql_query("SELECT data, valor, local_origem FROM desafio_resgates", conexao)
   df_dividas = pd.read_sql_query(
       "SELECT valor_parcela, status FROM dividas WHERE status = 'Pendente'",
       conexao,
@@ -139,43 +145,116 @@ try:
 except Exception as e:
   st.error(f"Erro ao carregar dados para o diagnóstico: {e}")
   df_lancamentos = pd.DataFrame()
+  df_aportes = pd.DataFrame()
+  df_resgates = pd.DataFrame()
   df_dividas = pd.DataFrame()
 
-# Tratamento de competência dos lançamentos manuais
-if not df_lancamentos.empty and "data" in df_lancamentos.columns:
-  res_comp = df_lancamentos["data"].apply(extrair_competencia)
-  df_lancamentos["competencia"] = [x[0] for x in res_comp]
-  # Filtra o dataframe de lançamentos estritamente para o mês selecionado
-  df_lancamentos_mes = df_lancamentos[
-      df_lancamentos["competencia"] == competencia_selecionada
-  ].copy()
+# Tratamentos numéricos e de competência
+if not df_lancamentos.empty and "valor" in df_lancamentos.columns:
+  df_lancamentos["valor"] = pd.to_numeric(df_lancamentos["valor"], errors="coerce").fillna(0.0)
+  df_lancamentos["tipo_clean"] = df_lancamentos["tipo"].str.strip().str.lower()
 else:
-  df_lancamentos_mes = pd.DataFrame(columns=["tipo", "valor"])
+  df_lancamentos["tipo_clean"] = ""
 
-# Cálculos financeiros base para a competência selecionada
+if not df_aportes.empty and "valor" in df_aportes.columns:
+  df_aportes["valor_num"] = pd.to_numeric(df_aportes["valor"], errors="coerce").fillna(0.0)
+else:
+  df_aportes["valor_num"] = 0.0
+
+if not df_resgates.empty and "valor" in df_resgates.columns:
+  df_resgates["valor_num"] = pd.to_numeric(df_resgates["valor"], errors="coerce").fillna(0.0)
+else:
+  df_resgates["valor_num"] = 0.0
+
+# Aplica extração de competência em todos os dataframes
+for df_item in [df_lancamentos, df_aportes, df_resgates]:
+  if not df_item.empty and "data" in df_item.columns:
+    res = df_item["data"].apply(extrair_competencia)
+    df_item["competencia"] = [x[0] for x in res]
+    df_item["comp_ordem"] = [x[1] for x in res]
+
+# Filtra lançamentos do mês selecionado
+df_lanc_mes = (
+    df_lancamentos[df_lancamentos["competencia"] == competencia_selecionada].copy()
+    if not df_lancamentos.empty
+    else pd.DataFrame()
+)
+
 total_receitas = (
-    df_lancamentos_mes[df_lancamentos_mes["tipo"] == "Receita"]["valor"].sum()
-    if not df_lancamentos_mes.empty
-    else 0.0
-)
-total_despesas_manuais = (
-    df_lancamentos_mes[df_lancamentos_mes["tipo"] == "Despesa"]["valor"].sum()
-    if not df_lancamentos_mes.empty
+    df_lanc_mes[
+        df_lanc_mes["tipo_clean"].isin(["receita", "crédito", "credito", "entrada"])
+    ]["valor"].sum()
+    if not df_lanc_mes.empty
     else 0.0
 )
 
-# Soma apenas as parcelas ativas das dívidas pendentes que possuem valor de parcela cadastrado
+total_despesas_manuais = (
+    df_lanc_mes[
+        df_lanc_mes["tipo_clean"].isin(["despesa", "débito", "debito", "saida"])
+    ]["valor"].sum()
+    if not df_lanc_mes.empty
+    else 0.0
+)
+
+# Soma apenas as parcelas ativas das dívidas pendentes
 total_parcelas_dividas = (
     df_dividas[df_dividas["valor_parcela"] > 0]["valor_parcela"].sum()
     if not df_dividas.empty
     else 0.0
 )
 
-# Despesa Total Real (Despesas Manuais do Mês + Parcelas de Dívidas Ativas)
 despesa_total_real = total_despesas_manuais + total_parcelas_dividas
 
-# Saldo Livre / Comprometimento
-saldo_livre = total_receitas - despesa_total_real
+df_aportes_mes = (
+    df_aportes[df_aportes["competencia"] == competencia_selecionada].copy()
+    if not df_aportes.empty
+    else pd.DataFrame()
+)
+total_aportes_mes = (
+    df_aportes_mes["valor_num"].sum() if not df_aportes_mes.empty and "valor_num" in df_aportes_mes.columns else 0.0
+)
+
+
+# Função para calcular o Saldo Anterior acumulado corretamente
+def calcular_saldo_ate_competencia(df_lan, df_ap, df_res, ordem_alvo):
+  try:
+    todas_ordens = sorted(
+        list(
+            set(
+                df_lan[df_lan["comp_ordem"] != "9999-99"]["comp_ordem"].unique().tolist()
+                + df_ap[df_ap["comp_ordem"] != "9999-99"]["comp_ordem"].unique().tolist()
+                + (df_res[df_res["comp_ordem"] != "9999-99"]["comp_ordem"].unique().tolist() if not df_res.empty and "comp_ordem" in df_res.columns else [])
+            )
+        )
+    )
+    saldo_acumulado = 0.0
+    for ord_comp in todas_ordens:
+      if ord_comp < ordem_alvo:
+        rec = df_lan[
+            (df_lan["comp_ordem"] == ord_comp)
+            & (df_lan["tipo_clean"].isin(["receita", "crédito", "credito", "entrada"]))
+        ]["valor"].sum()
+        gas = df_lan[
+            (df_lan["comp_ordem"] == ord_comp)
+            & (df_lan["tipo_clean"].isin(["despesa", "débito", "debito", "saida"]))
+        ]["valor"].sum()
+        apo_c = (
+            df_ap[df_ap["comp_ordem"] == ord_comp]["valor_num"].sum()
+            if not df_ap.empty and "valor_num" in df_ap.columns
+            else 0.0
+        )
+        saldo_acumulado += rec - gas - apo_c
+    return saldo_acumulado
+  except Exception:
+    return 0.0
+
+
+saldo_anterior = calcular_saldo_ate_competencia(
+    df_lancamentos, df_aportes, df_resgates, ordem_selecionada
+)
+
+# Saldo Livre / Resultado Real do Mês (Considerando o acumulado anterior + receitas - despesas - novos aportes)
+saldo_livre = saldo_anterior + total_receitas - despesa_total_real - total_aportes_mes
 
 
 def fmt_moeda(v):
@@ -201,14 +280,17 @@ with col_m2:
       help="Inclui despesas manuais do mês + parcelas de dívidas ativas",
   )
 with col_m3:
-  st.metric(label="⚖️ Saldo Livre / Resultado", value=fmt_moeda(saldo_livre))
+  st.metric(
+      label="⚖️ Saldo Livre / Resultado",
+      value=fmt_moeda(saldo_livre),
+      help="Considera o Saldo Anterior acumulado + Entradas - Compromissos - Aportes do mês",
+  )
 with col_m4:
-  # Diagnóstico rápido de status
-  if total_receitas == 0 and despesa_total_real == 0:
+  if total_receitas == 0 and despesa_total_real == 0 and saldo_anterior == 0:
     status_saude = "Sem Dados"
   elif saldo_livre < 0:
     status_saude = "🚨 Em Déficit (Vermelho)"
-  elif saldo_livre == 0:
+  elif abs(saldo_livre) < 0.05:
     status_saude = "⚠️ No Zero a Zero"
   else:
     status_saude = "✅ Com Sobra (Azul)"
@@ -223,49 +305,29 @@ if total_receitas == 0 and despesa_total_real == 0:
   st.info(
       f"⚠️ Você ainda não possui lançamentos cadastrados suficientes para"
       f" gerarmos uma análise profunda no mês de {competencia_selecionada}."
-      " Comece cadastrando suas receitas e despesas na aba 'Novo Lançamento'."
   )
 else:
   if saldo_livre < 0:
-    # Cenário 1: Vermelho / Endividado
     st.error(
         "🚨 **Diagnóstico:** Suas despesas e compromissos mensais estão"
-        " superando os seus ganhos. No momento, o foco principal **não é"
+        " superando os seus ganhos somados ao histórico. No momento, o foco principal **não é"
         " investir**, e sim estancar o sangramento do orçamento."
     )
-
     st.markdown("""
         #### 🛠️ Plano de Ação Imediato para Sair do Vermelho:
-        1. **Estancar o Sangramento:** O juro do rotativo de cartão de crédito e cheque especial destrói qualquer orçamento. Priorize negociar as dívidas que possuem juros altos antes de pensar em guardar dinheiro.
-        2. **Corte Cirúrgico de Custos:** Olhe nos seus lançamentos para onde está indo o maior volume de recursos em supérfluos. Reduza custos imediatamente para equilibrar o mês e zerar o déficit.
-        3. **A Metodologia do Centavo:** Evite pequenos gastos diários invisíveis ("efeito goteira") que somados consomem boa parte do seu ganho mensal.
+        1. **Estancar o Sangramento:** Priorize negociar dívidas com juros altos.
+        2. **Corte Cirúrgico de Custos:** Reduza custos imediatamente para equilibrar o caixa.
         """)
-
-  elif saldo_livre == 0:
-    # Cenário 2: Equilibrado mas sem folga
+  elif abs(saldo_livre) < 0.05:
     st.warning(
-        "⚠️ **Diagnóstico:** Suas contas estão empatadas com os seus ganhos. Você"
-        " não está acumulando dívidas novas, mas também não está conseguindo"
-        " construir uma gordura financeira."
+        "⚠️ **Diagnóstico:** Suas contas estão perfeitamente empatadas com os seus recursos."
     )
-
-    st.markdown("""
-        #### 🛠️ Plano de Ação para Criar Folga:
-        1. **Encontrar Margem:** Tente espremer pelo menos 5% a 10% dos seus gastos mensais para começar a transformá-los em sobra livre.
-        2. **Foco no Acordo das Dívidas:** Se você possui dívidas sem parcelamento ativo (aquelas pendentes paradas), use qualquer sobra eventual para propor acordos à vista com desconto agressivo.
-        """)
-
   else:
-    # Cenário 3: Saudável / Com Sobra
     st.success(
-        "✅ **Diagnóstico:** Parabéns! Seus ganhos estão superiores aos seus"
-        " compromissos mensais. Você possui uma sobra de caixa livre para"
-        " direcionar ao seu futuro."
+        "✅ **Diagnóstico:** Parabéns! Seus recursos totais estão cobrindo os"
+        " compromissos com sobra livre para o seu futuro."
     )
-
     st.markdown("""
         #### 🚀 Plano de Ação Rumo à Reserva de Emergência:
-        1. **Destino da Soberania (Reserva de Emergência):** Todo o seu saldo livre atual deve ter como destino primário a **Renda Fixa com liquidez diária** (Tesouro Selic ou CDBs de bancos sólidos que pagem 100% do CDI). O objetivo ideal é acumular o equivalente a **3 a 6 meses do seu custo de vida**.
-        2. **Segurança e Rendimento:** Diferente da caderneta de poupança tradicional, essas opções rendem todos os dias úteis e possuem a proteção do FGC (Fundo Garantidor de Créditos) até R$ 250 mil por instituição.
-        3. **Aceleração de Quitação:** Se ainda restam dívidas parceladas ativas, você pode usar parte do excedente para amortizar parcelas antecipadamente e economizar nos juros.
+        1. **Destino da Soberania (Reserva de Emergência):** Direcione o saldo livre para **Renda Fixa com liquidez diária** (100% do CDI).
         """)
