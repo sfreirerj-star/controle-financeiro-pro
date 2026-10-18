@@ -84,18 +84,11 @@ try:
     except Exception:
       conexao.rollback()
 
-  # 3. Carregar Resgates (tabela separada do módulo de resgates)
+  # 3. Carregar Resgates (Busca flexível e tolerante a nomes de colunas)
   try:
-    df_resgates = pd.read_sql_query(
-        "SELECT id, data, valor_resgatado as valor, instituicao_origem FROM resgates", conexao
-    )
+    df_resgates = pd.read_sql_query("SELECT * FROM resgates", conexao)
   except Exception:
-    try:
-      df_resgates = pd.read_sql_query(
-          "SELECT id, data, valor, instituicao_origem FROM resgates", conexao
-      )
-    except Exception:
-      conexao.rollback()
+    conexao.rollback()
 
   # 4. Carregar Dívidas
   try:
@@ -116,16 +109,26 @@ if not df_aportes.empty and "valor" in df_aportes.columns:
 else:
   total_aportes_geral = 0.0
 
-# Tratamento e soma segura dos resgates
-if not df_resgates.empty and "valor" in df_resgates.columns:
-  df_resgates["valor_num"] = pd.to_numeric(
-      df_resgates["valor"], errors="coerce"
-  ).fillna(0.0)
+# Tratamento e soma segura dos resgates (Mapeamento inteligente da coluna de valor)
+if not df_resgates.empty:
+  col_val_resg = None
+  for col in ["valor", "valor_resgatado", "valor_num"]:
+    if col in df_resgates.columns:
+      col_val_resg = col
+      break
+  
+  if col_val_resg:
+    df_resgates["valor_num"] = pd.to_numeric(
+        df_resgates[col_val_resg], errors="coerce"
+    ).fillna(0.0)
+  else:
+    df_resgates["valor_num"] = 0.0
+
   total_resgates_geral = df_resgates["valor_num"].sum()
 else:
   total_resgates_geral = 0.0
 
-# Patrimônio Líquido Acumulado Total (Tudo que foi guardado menos tudo que foi resgatado)
+# Patrimônio Líquido Acumulado Real (Aportes Totais - Resgates Totais)
 patrimonio_guardado_total = total_aportes_geral - total_resgates_geral
 
 
@@ -330,7 +333,6 @@ def calcular_saldo_ate_competencia(df_lan, df_ap, df_res, ordem_alvo):
             if not df_res.empty else 0.0
         )
         
-        # Saldo acumulado desconta o líquido do mês (aportes retiram, resgates devolvem)
         saldo_acumulado += rec - gas - (apo_c - res_c)
     return saldo_acumulado
   except Exception:
@@ -341,7 +343,6 @@ saldo_remanescente_anterior = calcular_saldo_ate_competencia(
     df_lancamentos, df_aportes, df_resgates, ordem_selecionada
 )
 
-# Saldo do mês considera o impacto líquido dos investimentos (Aportes menos Resgates)
 saldo_mes = (
     saldo_remanescente_anterior
     + total_receitas_mes
@@ -357,7 +358,6 @@ col1.metric("Saldo Anterior", fmt_moeda(saldo_remanescente_anterior))
 col2.metric("Entradas", fmt_moeda(total_receitas_mes))
 col3.metric("Gastos Comuns", fmt_moeda(total_gastos_mes))
 
-# Cartão exibe os aportes do mês (e resgates se houver)
 label_aporte_card = "Aportes do Mês"
 valor_aporte_card = total_aportes_mes
 if total_resgates_mes > 0:
@@ -378,7 +378,7 @@ else:
       delta_color="inverse",
   )
 
-# Exibição secundária destacando o total acumulado guardado (Patrimônio Líquido)
+# Mensagem em azul com o cálculo exato do Patrimônio Guardado Acumulado
 st.info(
     f"💡 **Patrimônio Total Guardado (Acumulado Geral):** {fmt_moeda(patrimonio_guardado_total)} "
     f"(Total Aportado: {fmt_moeda(total_aportes_geral)} | Total Resgatado: {fmt_moeda(total_resgates_geral)})"
