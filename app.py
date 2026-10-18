@@ -108,13 +108,26 @@ if not df_aportes.empty and "valor" in df_aportes.columns:
 else:
   df_aportes["valor_num"] = 0.0
 
-# Tratamento da coluna valor_num em resgates
+# --- TRATAMENTO INTELIGENTE E UNIFICADO DE RESGATES ---
+# Garante a leitura dos resgates do banco e unifica com lançamentos de categoria 'Resgate'
 if not df_resgates.empty and "valor" in df_resgates.columns:
   df_resgates["valor_num"] = pd.to_numeric(
       df_resgates["valor"], errors="coerce"
   ).fillna(0.0)
 else:
   df_resgates["valor_num"] = 0.0
+
+if not df_lancamentos.empty and "categoria" in df_lancamentos.columns:
+  df_resg_lanc = df_lancamentos[
+      df_lancamentos["categoria"].str.strip().str.lower() == "resgate"
+  ].copy()
+  if not df_resg_lanc.empty:
+    df_resg_lanc["valor_num"] = pd.to_numeric(
+        df_resg_lanc["valor"], errors="coerce"
+    ).fillna(0.0)
+    df_resgates = pd.concat([df_resgates, df_resg_lanc], ignore_index=True).drop_duplicates(
+        subset=["data", "valor_num"]
+    )
 
 
 def fmt_moeda(valor):
@@ -125,19 +138,27 @@ def fmt_moeda(valor):
   )
 
 
-# --- PROCESSAMENTO DE COMPETÊNCIAS (MM/AAAA) ---
-def extrair_competencia(data_str):
-  """Extrai o formato MM/AAAA para exibição e AAAA-MM para ordenação correta."""
+# --- PROCESSAMENTO ROBUSTO DE COMPETÊNCIAS (MM/AAAA) ---
+def extrair_competencia(data_val):
+  """Extrai MM/AAAA e AAAA-MM tratando strings e objetos de data nativos."""
+  if pd.isna(data_val) or data_val is None:
+    return "Indefinido", "9999-99"
+
   try:
+    if isinstance(data_val, (pd.Timestamp, datetime)):
+      return data_val.strftime("%m/%Y"), data_val.strftime("%Y-%m")
+
+    data_str = str(data_val).strip()
+
     dt = pd.to_datetime(data_str, format="%d/%m/%Y", errors="coerce")
     if pd.isna(dt):
       dt = pd.to_datetime(data_str, errors="coerce")
+
     if pd.notna(dt):
       return dt.strftime("%m/%Y"), dt.strftime("%Y-%m")
   except Exception:
     pass
   return "Indefinido", "9999-99"
-
 
 if not df_lancamentos.empty and "data" in df_lancamentos.columns:
   res_lanc = df_lancamentos["data"].apply(extrair_competencia)
