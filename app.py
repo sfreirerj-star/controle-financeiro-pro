@@ -55,7 +55,8 @@ st.markdown(
 df_lancamentos = pd.DataFrame(
     columns=["data", "tipo", "categoria", "descricao", "valor"]
 )
-df_aportes = pd.DataFrame(columns=["data", "valor", "local_aplicacao", "tipo"])
+df_aportes = pd.DataFrame(columns=["data", "valor", "local_aplicacao"])
+df_resgates = pd.DataFrame(columns=["data", "valor", "instituicao_origem"])
 df_dividas = pd.DataFrame(
     columns=["credor", "valor_total", "juros_mensal", "status"]
 )
@@ -70,30 +71,33 @@ try:
   except Exception:
     conexao.rollback()
 
-  # 2. Carregar Aportes / Movimentações de Investimento
+  # 2. Carregar Aportes
   try:
-    # Tenta carregar incluindo a coluna tipo, caso exista
     df_aportes = pd.read_sql_query(
-        "SELECT id, data, valor, local_aplicacao, tipo FROM desafio_aportes",
-        conexao,
+        "SELECT id, data, valor, local_aplicacao FROM desafio_aportes", conexao
     )
   except Exception:
     try:
       df_aportes = pd.read_sql_query(
-          "SELECT id, data, valor, local_aplicacao, tipo FROM aportes", conexao
+          "SELECT id, data, valor, local_aplicacao FROM aportes", conexao
       )
     except Exception:
-      try:
-        # Fallback caso a coluna tipo ainda não tenha sido criada na tabela do banco
-        df_aportes = pd.read_sql_query(
-            "SELECT id, data, valor, local_aplicacao FROM desafio_aportes",
-            conexao,
-        )
-        df_aportes["tipo"] = "Aporte"
-      except Exception:
-        conexao.rollback()
+      conexao.rollback()
 
-  # 3. Carregar Dívidas
+  # 3. Carregar Resgates (tabela separada do módulo de resgates)
+  try:
+    df_resgates = pd.read_sql_query(
+        "SELECT id, data, valor_resgatado as valor, instituicao_origem FROM resgates", conexao
+    )
+  except Exception:
+    try:
+      df_resgates = pd.read_sql_query(
+          "SELECT id, data, valor, instituicao_origem FROM resgates", conexao
+      )
+    except Exception:
+      conexao.rollback()
+
+  # 4. Carregar Dívidas
   try:
     df_dividas = pd.read_sql_query("SELECT * FROM dividas", conexao)
   except Exception:
@@ -103,34 +107,26 @@ try:
 except Exception as e:
   st.sidebar.error(f"Erro geral de conexão com o banco na nuvem: {e}")
 
-# Tratamento seguro dos valores de aportes e resgates
-if not df_aportes.empty:
-  if "valor" in df_aportes.columns:
-    df_aportes["valor_num"] = pd.to_numeric(
-        df_aportes["valor"], errors="coerce"
-    ).fillna(0.0)
-  else:
-    df_aportes["valor_num"] = 0.0
-
-  if "tipo" not in df_aportes.columns:
-    df_aportes["tipo"] = "Aporte"
-
-  df_aportes["tipo_clean"] = df_aportes["tipo"].str.strip().str.lower()
-  
-  # Impacto no caixa: Aporte retira dinheiro do caixa (+), Resgate devolve dinheiro ao caixa (-)
-  # Ou seja, impacto líquido = Aportes - Resgates
-  def calcular_impacto_caixa(row):
-    t = str(row["tipo_clean"])
-    val = float(row["valor_num"])
-    if "resgate" in t:
-      return -abs(val)  # Resgate soma ao saldo livre (retorna pra conta)
-    else:
-      return abs(val)   # Aporte reduz o saldo livre (sai da conta)
-
-  df_aportes["impacto_caixa"] = df_aportes.apply(calcular_impacto_caixa, axis=1)
-  total_aportes_geral = df_aportes[df_aportes["tipo_clean"].str.contains("aporte", na=True)]["valor_num"].sum()
+# Tratamento e soma segura dos aportes
+if not df_aportes.empty and "valor" in df_aportes.columns:
+  df_aportes["valor_num"] = pd.to_numeric(
+      df_aportes["valor"], errors="coerce"
+  ).fillna(0.0)
+  total_aportes_geral = df_aportes["valor_num"].sum()
 else:
   total_aportes_geral = 0.0
+
+# Tratamento e soma segura dos resgates
+if not df_resgates.empty and "valor" in df_resgates.columns:
+  df_resgates["valor_num"] = pd.to_numeric(
+      df_resgates["valor"], errors="coerce"
+  ).fillna(0.0)
+  total_resgates_geral = df_resgates["valor_num"].sum()
+else:
+  total_resgates_geral = 0.0
+
+# Patrimônio Líquido Acumulado Total (Tudo que foi guardado menos tudo que foi resgatado)
+patrimonio_guardado_total = total_aportes_geral - total_resgates_geral
 
 
 def fmt_moeda(valor):
@@ -171,9 +167,18 @@ else:
   df_aportes["competencia"] = "Indefinido"
   df_aportes["comp_ordem"] = "9999-99"
 
+if not df_resgates.empty and "data" in df_resgates.columns:
+  res_resg = df_resgates["data"].apply(extrair_competencia)
+  df_resgates["competencia"] = [x[0] for x in res_resg]
+  df_resgates["comp_ordem"] = [x[1] for x in res_resg]
+else:
+  df_resgates["competencia"] = "Indefinido"
+  df_resgates["comp_ordem"] = "9999-99"
+
 mapeamento_comps = pd.concat([
     df_lancamentos[["competencia", "comp_ordem"]],
     df_aportes[["competencia", "comp_ordem"]],
+    df_resgates[["competencia", "comp_ordem"]],
 ]).drop_duplicates()
 
 mapeamento_comps = mapeamento_comps[
@@ -256,31 +261,30 @@ total_gastos_mes = (
     else 0.0
 )
 
+# Aportes e resgates específicos do mês selecionado
 df_aportes_mes = (
     df_aportes[df_aportes["competencia"] == competencia_selecionada].copy()
     if not df_aportes.empty
     else pd.DataFrame()
 )
-
-# Separação correta para exibição nos cartões
 total_aportes_mes = (
-    df_aportes_mes[df_aportes_mes["tipo_clean"].str.contains("aporte", na=True)]["valor_num"].sum()
-    if not df_aportes_mes.empty else 0.0
+    df_aportes_mes["valor_num"].sum() if not df_aportes_mes.empty else 0.0
 )
 
+df_resgates_mes = (
+    df_resgates[df_resgates["competencia"] == competencia_selecionada].copy()
+    if not df_resgates.empty
+    else pd.DataFrame()
+)
 total_resgates_mes = (
-    df_aportes_mes[df_aportes_mes["tipo_clean"].str.contains("resgate", na=False)]["valor_num"].sum()
-    if not df_aportes_mes.empty else 0.0
+    df_resgates_mes["valor_num"].sum() if not df_resgates_mes.empty else 0.0
 )
 
-# Impacto líquido no caixa do mês (Aportes positivos tiram do caixa, Resgates positivos somam ao caixa)
-impacto_investimentos_mes = (
-    df_aportes_mes["impacto_caixa"].sum()
-    if not df_aportes_mes.empty else 0.0
-)
+# Impacto líquido no caixa do mês: Aportes tiram dinheiro do caixa (+), Resgates devolvem ao caixa (-)
+impacto_investimentos_mes = total_aportes_mes - total_resgates_mes
 
 
-def calcular_saldo_ate_competencia(df_lan, df_ap, ordem_alvo):
+def calcular_saldo_ate_competencia(df_lan, df_ap, df_res, ordem_alvo):
   try:
     todas_ordens = sorted(
         list(
@@ -289,6 +293,9 @@ def calcular_saldo_ate_competencia(df_lan, df_ap, ordem_alvo):
                     "comp_ordem"
                 ].unique().tolist()
                 + df_ap[df_ap["comp_ordem"] != "9999-99"][
+                    "comp_ordem"
+                ].unique().tolist()
+                + df_res[df_res["comp_ordem"] != "9999-99"][
                     "comp_ordem"
                 ].unique().tolist()
             )
@@ -314,23 +321,27 @@ def calcular_saldo_ate_competencia(df_lan, df_ap, ordem_alvo):
             )
         ]["valor"].sum()
         
-        imp_inv = (
-            df_ap[df_ap["comp_ordem"] == ord_comp]["impacto_caixa"].sum()
-            if not df_ap.empty
-            else 0.0
+        apo_c = (
+            df_ap[df_ap["comp_ordem"] == ord_comp]["valor_num"].sum()
+            if not df_ap.empty else 0.0
         )
-        # Saldo acumulado desconta o impacto líquido (aportes retiram, resgates devolvem)
-        saldo_acumulado += rec - gas - imp_inv
+        res_c = (
+            df_res[df_res["comp_ordem"] == ord_comp]["valor_num"].sum()
+            if not df_res.empty else 0.0
+        )
+        
+        # Saldo acumulado desconta o líquido do mês (aportes retiram, resgates devolvem)
+        saldo_acumulado += rec - gas - (apo_c - res_c)
     return saldo_acumulado
   except Exception:
     return 0.0
 
 
 saldo_remanescente_anterior = calcular_saldo_ate_competencia(
-    df_lancamentos, df_aportes, ordem_selecionada
+    df_lancamentos, df_aportes, df_resgates, ordem_selecionada
 )
 
-# Saldo do mês considera o impacto líquido dos investimentos (Aportes vs Resgates)
+# Saldo do mês considera o impacto líquido dos investimentos (Aportes menos Resgates)
 saldo_mes = (
     saldo_remanescente_anterior
     + total_receitas_mes
@@ -346,7 +357,7 @@ col1.metric("Saldo Anterior", fmt_moeda(saldo_remanescente_anterior))
 col2.metric("Entradas", fmt_moeda(total_receitas_mes))
 col3.metric("Gastos Comuns", fmt_moeda(total_gastos_mes))
 
-# Exibição clara no cartão de investimentos do mês
+# Cartão exibe os aportes do mês (e resgates se houver)
 label_aporte_card = "Aportes do Mês"
 valor_aporte_card = total_aportes_mes
 if total_resgates_mes > 0:
@@ -367,6 +378,12 @@ else:
       delta_color="inverse",
   )
 
+# Exibição secundária destacando o total acumulado guardado (Patrimônio Líquido)
+st.info(
+    f"💡 **Patrimônio Total Guardado (Acumulado Geral):** {fmt_moeda(patrimonio_guardado_total)} "
+    f"(Total Aportado: {fmt_moeda(total_aportes_geral)} | Total Resgatado: {fmt_moeda(total_resgates_geral)})"
+)
+
 st.divider()
 
 st.subheader(
@@ -382,15 +399,12 @@ df_gastos_grafico = (
 )
 
 if not df_aportes_mes.empty:
-  # Apenas os aportes efetivos entram como fatias de saída nos gráficos de custos
-  df_aportes_efetivos = df_aportes_mes[df_aportes_mes["tipo_clean"].str.contains("aporte", na=True)]
-  if not df_aportes_efetivos.empty:
-    df_ap_graf = pd.DataFrame()
-    df_ap_graf["categoria"] = ["Investimento / Aporte"] * len(df_aportes_efetivos)
-    df_ap_graf["valor"] = df_aportes_efetivos["valor_num"]
-    df_gastos_grafico = pd.concat(
-        [df_gastos_grafico, df_ap_graf], ignore_index=True
-    )
+  df_ap_graf = pd.DataFrame()
+  df_ap_graf["categoria"] = ["Investimento / Aporte"] * len(df_aportes_mes)
+  df_ap_graf["valor"] = df_aportes_mes["valor_num"]
+  df_gastos_grafico = pd.concat(
+      [df_gastos_grafico, df_ap_graf], ignore_index=True
+  )
 
 if not df_gastos_grafico.empty and "valor" in df_gastos_grafico.columns:
   df_cat = df_gastos_grafico.groupby("categoria")["valor"].sum().reset_index()
@@ -516,6 +530,9 @@ todas_ordens = sorted(
             + df_aportes[df_aportes["comp_ordem"] != "9999-99"][
                 "comp_ordem"
             ].unique().tolist()
+            + df_resgates[df_resgates["comp_ordem"] != "9999-99"][
+                "comp_ordem"
+            ].unique().tolist()
         )
     )
 )
@@ -554,20 +571,25 @@ if todas_ordens:
         else 0.0
     )
 
-    imp_inv_c = (
-        df_aportes[df_aportes["comp_ordem"] == ord_comp]["impacto_caixa"].sum()
-        if not df_aportes.empty
-        else 0.0
+    apo_c = (
+        df_aportes[df_aportes["comp_ordem"] == ord_comp]["valor_num"].sum()
+        if not df_aportes.empty else 0.0
+    )
+    res_c = (
+        df_resgates[df_resgates["comp_ordem"] == ord_comp]["valor_num"].sum()
+        if not df_resgates.empty else 0.0
     )
 
-    saldo_final_c = acum_saldo_loop + rec_c - gas_c - imp_inv_c
+    investimento_liquido_c = apo_c - res_c
+
+    saldo_final_c = acum_saldo_loop + rec_c - gas_c - investimento_liquido_c
 
     dados_balancete.append({
         "Competência": comp_formatada,
         "Saldo Anterior": acum_saldo_loop,
         "Entradas": rec_c,
         "Gastos Comuns": gas_c,
-        "Investimento Líquido": imp_inv_c,
+        "Invest. Líquido": investimento_liquido_c,
         "Saldo Final": saldo_final_c,
         "_ordem": ord_comp,
     })
@@ -579,7 +601,7 @@ if todas_ordens:
       "Saldo Anterior",
       "Entradas",
       "Gastos Comuns",
-      "Investimento Líquido",
+      "Invest. Líquido",
       "Saldo Final",
   ]:
     df_resumo_formatado[col] = df_resumo_formatado[col].apply(fmt_moeda)
