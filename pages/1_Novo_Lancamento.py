@@ -346,10 +346,11 @@ st.divider()
 
 st.subheader(f"Histórico de Lançamentos da Competência: {competencia_selecionada}")
 if not df_lanc_mes.empty:
-  df_exibicao = df_lanc_mes.drop(
+  df_exibicao = df_lanc_mes.copy()
+  df_exibicao["valor"] = df_exibicao["valor_num"].apply(fmt_moeda)
+  df_exibicao = df_exibicao.drop(
       columns=["tipo_clean", "valor_num", "competencia"], errors="ignore"
   )
-  df_exibicao["valor"] = df_exibicao["valor_num"].apply(fmt_moeda)
   st.dataframe(df_exibicao.set_index("id"), use_container_width=True)
 else:
   st.info("Nenhum lançamento registrado nesta competência.")
