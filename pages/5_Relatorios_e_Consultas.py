@@ -145,10 +145,11 @@ if not df_lancamentos.empty:
       df_lancamentos["data"], format="%d/%m/%Y", errors="coerce"
   )
 
-  aba1, aba2, aba3 = st.tabs([
+  aba1, aba2, aba3, aba4 = st.tabs([
       "🔍 Consulta, Filtros e Ações",
       "📅 Fechamento de Mês (Saldo Remanescente)",
       "🔮 Projeção de Saldo Futuro",
+      "📥 Central de Exportação e Backup",
   ])
 
 
@@ -593,5 +594,125 @@ if not df_lancamentos.empty:
           "Cadastre mais lançamentos com datas válidas para habilitar a"
           " projeção baseada em histórico."
       )
-else:
-  st.info("Nenhum lançamento cadastrado no sistema para gerar relatórios.")
+
+  # --- ABA 4: CENTRAL DE EXPORTAÇÃO E BACKUP ---
+  with aba4:
+    st.markdown("### 📥 Central de Exportação e Backup do Banco de Dados")
+    st.write(
+        "Exporte relatórios consolidados por mês, ano completo ou faça o backup"
+        " completo de todas as tabelas do sistema."
+    )
+
+    col_exp1, col_exp2 = st.columns(2)
+
+    with col_exp1:
+      tipo_exportacao = st.selectbox(
+          "Selecione o Escopo do Relatório:",
+          [
+              "Mês Atual / Ativo",
+              "Ano Completo",
+              "Backup Completo (Todas as Tabelas)",
+          ],
+          key="tipo_exportacao_relatorio",
+      )
+
+    with col_exp2:
+      if tipo_exportacao == "Ano Completo":
+        anos_disponiveis = [2026, 2025, 2024, 2023]
+        ano_selecionado = st.selectbox(
+            "Selecione o Ano de Referência:",
+            anos_disponiveis,
+            key="ano_exp_sel",
+        )
+      elif tipo_exportacao == "Mês Atual / Ativo":
+        st.info(
+            f"Exportando dados da competência ativa:"
+            f" **{competencia_selecionada}**"
+        )
+
+    if st.button("📊 Gerar Arquivo para Download", type="primary"):
+      try:
+        conexao = obter_conexao()
+
+        df_l = pd.read_sql_query("SELECT * FROM lancamentos", conexao)
+        df_a = pd.read_sql_query("SELECT * FROM desafio_aportes", conexao)
+        df_r = pd.read_sql_query("SELECT * FROM desafio_resgates", conexao)
+        df_d = pd.read_sql_query("SELECT * FROM dividas", conexao)
+        conexao.close()
+
+        output = io.BytesIO()
+
+        if tipo_exportacao == "Mês Atual / Ativo":
+          df_l_exp = (
+              df_l[df_l["data"].str.contains(f"/{competencia_selecionada}")]
+              if not df_l.empty
+              else df_l
+          )
+          df_a_exp = (
+              df_a[df_a["data"].str.contains(f"/{competencia_selecionada}")]
+              if not df_a.empty
+              else df_a
+          )
+          df_r_exp = (
+              df_r[df_r["data"].str.contains(f"/{competencia_selecionada}")]
+              if not df_r.empty
+              else df_r
+          )
+
+          with pd.ExcelWriter(output, engine="openpyxl") as writer:
+            df_l_exp.to_excel(
+                writer, sheet_name="Lancamentos_Mes", index=False
+            )
+            df_a_exp.to_excel(writer, sheet_name="Aportes_Mes", index=False)
+            df_r_exp.to_excel(writer, sheet_name="Resgates_Mes", index=False)
+
+          nome_arquivo = (
+              f"Relatorio_Financeiro_{competencia_selecionada.replace('/', '_')}.xlsx"
+          )
+
+        elif tipo_exportacao == "Ano Completo":
+          df_l_exp = (
+              df_l[df_l["data"].str.contains(f"/{ano_selecionado}")]
+              if not df_l.empty
+              else df_l
+          )
+          df_a_exp = (
+              df_a[df_a["data"].str.contains(f"/{ano_selecionado}")]
+              if not df_a.empty
+              else df_a
+          )
+          df_r_exp = (
+              df_r[df_r["data"].str.contains(f"/{ano_selecionado}")]
+              if not df_r.empty
+              else df_r
+          )
+
+          with pd.ExcelWriter(output, engine="openpyxl") as writer:
+            df_l_exp.to_excel(
+                writer, sheet_name=f"Lancamentos_{ano_selecionado}", index=False
+            )
+            df_a_exp.to_excel(
+                writer, sheet_name=f"Aportes_{ano_selecionado}", index=False
+            )
+            df_r_exp.to_excel(
+                writer, sheet_name=f"Resgates_{ano_selecionado}", index=False
+            )
+
+          nome_arquivo = f"Relatorio_Anual_{ano_selecionado}.xlsx"
+
+        else:  # Backup Completo
+          with pd.ExcelWriter(output, engine="openpyxl") as writer:
+            df_l.to_excel(writer, sheet_name="Todos_Lancamentos", index=False)
+            df_a.to_excel(writer, sheet_name="Todos_Aportes", index=False)
+            df_r.to_excel(writer, sheet_name="Todos_Resgates", index=False)
+            df_d.to_excel(writer, sheet_name="Dividas", index=False)
+
+          nome_arquivo = f"Backup_Banco_Dados_Completo_{datetime.now().strftime('%Y_%m_%d')}.xlsx"
+
+        processed_data = output.getvalue()
+
+        st.download_button(
+            label=f"💾 Baixar Planilha ({nome_arquivo})",
+            data=processed_data,
+            file_name=nome_arquivo,
+            mime="application/vnd.openxml
