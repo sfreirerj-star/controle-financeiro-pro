@@ -6,15 +6,13 @@ import psycopg2
 import streamlit as st
 from utils import aplicar_estilo_moderno
 
-st.set_page_config(page_title="Título da Página", layout="wide")
-aplicar_estilo_moderno()  # <-- Essencial em cada página
-
-# 1. Configuração da página DEVE ser a primeira chamada do Streamlit
+# 1. Apenas UMA chamada de set_page_config no topo absoluto do script
 st.set_page_config(
     page_title="Relatórios e Consultas - Painel do Marcelo",
     page_icon="📈",
     layout="wide",
 )
+aplicar_estilo_moderno()
 
 
 def obter_conexao():
@@ -140,6 +138,11 @@ except Exception as e:
   st.error(f"Erro ao carregar lançamentos: {e}")
   df_lancamentos = pd.DataFrame()
 
+
+def fmt_moeda(v):
+  return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
 if not df_lancamentos.empty:
   df_lancamentos["data_dt"] = pd.to_datetime(
       df_lancamentos["data"], format="%d/%m/%Y", errors="coerce"
@@ -152,13 +155,6 @@ if not df_lancamentos.empty:
       "📥 Central de Exportação e Backup",
   ])
 
-
-  def fmt_moeda(v):
-    return (
-        f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-    )
-
-
   # --- ABA 1: CONSULTA, FILTROS E AÇÕES ---
   with aba1:
     st.markdown(
@@ -166,7 +162,6 @@ if not df_lancamentos.empty:
         f" {competencia_selecionada})"
     )
 
-    # Tratamento da competência para a aba de consulta
     res_comp = df_lancamentos["data_dt"].apply(
         lambda x: x.strftime("%m/%Y") if pd.notna(x) else "Indefinido"
     )
@@ -198,7 +193,6 @@ if not df_lancamentos.empty:
     with col_f3:
       filtro_texto = st.text_input("Buscar na Descrição (Palavra-chave)")
 
-    # Aplicação dos filtros
     df_filtrado = df_lancamentos.copy()
 
     if usar_filtro_comp:
@@ -248,7 +242,6 @@ if not df_lancamentos.empty:
     cat_str = ", ".join(filtro_categorias) if filtro_categorias else "Todas"
     st.info(f"📊 **Total dos lançamentos filtrados:** {fmt_moeda(total_filtrado)}")
 
-    # --- BOTÕES DE EXPORTAÇÃO E IMPRESSÃO ---
     col_exp1, col_exp2, col_exp3 = st.columns(3)
 
     df_para_exportar = df_exibicao[
@@ -321,7 +314,6 @@ if not df_lancamentos.empty:
 
     st.divider()
 
-    # --- SEÇÃO DE EDIÇÃO E EXCLUSÃO RÁPIDA NA CONSULTA ---
     st.markdown("### ✏️ Gerenciar Lançamento Filtrado (Editar ou Excluir)")
     if not df_filtrado.empty:
       df_filtrado["resumo_acao"] = (
@@ -400,7 +392,7 @@ if not df_lancamentos.empty:
           "Nenhum registro disponível para gerenciar com os filtros atuais."
       )
 
-  # --- ABA 2: FECHAMENTO DE MÊS (FLUXO E SALDO REMANESCENTE) ---
+  # --- ABA 2: FECHAMENTO DE MÊS ---
   with aba2:
     st.markdown("### 📅 Fechamento Mensal e Evolução de Saldo")
     st.write(
@@ -468,7 +460,6 @@ if not df_lancamentos.empty:
     df_lancamentos["ano_mes"] = df_lancamentos["data_dt"].dt.to_period("M")
 
     if not df_lancamentos.empty and df_lancamentos["ano_mes"].notna().any():
-      # Cálculo de médias históricas mensais
       df_rec_m = (
           df_lancamentos[df_lancamentos["tipo"] == "Receita"]
           .groupby("ano_mes")["valor"]
@@ -483,7 +474,6 @@ if not df_lancamentos.empty:
       media_entradas_hist = df_rec_m.mean() if not df_rec_m.empty else 0.0
       media_saidas_hist = df_desp_m.mean() if not df_desp_m.empty else 0.0
 
-      # Saldo atual acumulado real (último saldo remanescente)
       df_receitas_tot = (
           df_lancamentos[df_lancamentos["tipo"] == "Receita"]
           .groupby("ano_mes")["valor"]
@@ -537,13 +527,11 @@ if not df_lancamentos.empty:
           step=1,
       )
 
-      # Gerar tabela de projeção
       lista_proj = []
       saldo_loop = patrimonio_inicial_proj
       data_base = datetime.now()
 
       for i in range(1, meses_proj + 1):
-        # Avançar mês a mês
         mes_futuro = (
             data_base.replace(day=1) + pd.DateOffset(months=i)
         ).strftime("%m/%Y")
@@ -563,7 +551,6 @@ if not df_lancamentos.empty:
       st.write("")
       st.markdown("#### 📊 Resultado da Projeção Mês a Mês")
 
-      # Exibir formatado em moeda
       df_proj_exibe = df_projecao.copy()
       df_proj_exibe["Entradas Previstas (R$)"] = df_proj_exibe[
           "Entradas Previstas (R$)"
@@ -715,4 +702,13 @@ if not df_lancamentos.empty:
             label=f"💾 Baixar Planilha ({nome_arquivo})",
             data=processed_data,
             file_name=nome_arquivo,
-            mime="application/vnd.openxml
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        st.success(
+            "Planilha gerada com sucesso! Clique no botão de download acima."
+        )
+
+      except Exception as e:
+        st.error(f"Erro ao gerar relatório: {e}")
+else:
+  st.info("Nenhum lançamento cadastrado no sistema para gerar relatórios.")
