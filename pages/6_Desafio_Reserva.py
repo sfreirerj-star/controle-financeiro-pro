@@ -1,8 +1,8 @@
 from datetime import datetime
-import pandas as pd
-import psycopg2
 import os
 import sys
+import pandas as pd
+import psycopg2
 import streamlit as st
 from utils import aplicar_estilo_moderno
 
@@ -10,16 +10,22 @@ st.set_page_config(page_title="Título da Página", layout="wide")
 aplicar_estilo_moderno()  # <-- Essencial em cada página
 
 # Adiciona a pasta raiz ao caminho do Python para conseguir importar o database.py
-sys.path.append(
-    os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-)
-from database import inicializar_banco, obter_conexao
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+try:
+  from database import inicializar_banco, obter_conexao
 
-# Garante que as tabelas estão prontas e abre a conexão correta
-inicializar_banco()
+  # Garante que as tabelas estão prontas e abre a conexão correta
+  inicializar_banco()
+except ImportError:
+
+  def inicializar_banco():
+    pass
+
 
 st.set_page_config(
-    page_title="Desafio Reserva & Simulador - Painel do Marcelo", page_icon="🎯", layout="wide"
+    page_title="Desafio Reserva & Simulador - Painel do Marcelo",
+    page_icon="🎯",
+    layout="wide",
 )
 
 
@@ -31,7 +37,7 @@ def garantir_tabelas_e_sincronizacao():
   try:
     conexao = obter_conexao()
     cursor = conexao.cursor()
-    
+
     # 1. Criação das tabelas se não existirem
     cursor.execute("""
             CREATE TABLE IF NOT EXISTS desafio_aportes (
@@ -53,8 +59,15 @@ def garantir_tabelas_e_sincronizacao():
     conexao.commit()
 
     # 2. Sincronização Inteligente Bidirecional (Garante que resgates e aportes reflitam em lancamentos sem duplicar)
-    df_r = pd.read_sql_query("SELECT id, data, valor, local_origem, motivo FROM desafio_resgates", conexao)
-    df_l = pd.read_sql_query("SELECT id, data, descricao, valor, categoria FROM lancamentos WHERE categoria = 'Resgate'", conexao)
+    df_r = pd.read_sql_query(
+        "SELECT id, data, valor, local_origem, motivo FROM desafio_resgates",
+        conexao,
+    )
+    df_l = pd.read_sql_query(
+        "SELECT id, data, descricao, valor, categoria FROM lancamentos WHERE"
+        " categoria = 'Resgate'",
+        conexao,
+    )
 
     # Sincroniza Resgates de 'lancamentos' para 'desafio_resgates'
     if not df_l.empty:
@@ -64,7 +77,13 @@ def garantir_tabelas_e_sincronizacao():
         dt_l = row_l["data"]
 
         local_encontrado = "Banco Itaú" if "Itaú" in desc else "Outro"
-        for banco in ["Nomad", "Sofisa Direto", "Banco Inter", "Nubank", "Tesouro Selic"]:
+        for banco in [
+            "Nomad",
+            "Sofisa Direto",
+            "Banco Inter",
+            "Nubank",
+            "Tesouro Selic",
+        ]:
           if banco.lower() in desc.lower():
             local_encontrado = banco
             break
@@ -76,33 +95,54 @@ def garantir_tabelas_e_sincronizacao():
 
         existe_r = False
         if not df_r.empty:
-          existe_r = not df_r[(abs(df_r["valor"] - val_l) < 0.05) & (df_r["data"] == dt_l)].empty
+          existe_r = not df_r[
+              (abs(df_r["valor"] - val_l) < 0.05) & (df_r["data"] == dt_l)
+          ].empty
 
         if not existe_r:
           cursor.execute(
-              "INSERT INTO desafio_resgates (data, valor, local_origem, motivo) VALUES (%s, %s, %s, %s)",
+              "INSERT INTO desafio_resgates (data, valor, local_origem,"
+              " motivo) VALUES (%s, %s, %s, %s)",
               (dt_l, val_l, local_encontrado, motivo_encontrado),
           )
           conexao.commit()
 
     # Sincroniza Resgates de 'desafio_resgates' para 'lancamentos' caso falte
-    df_r_atual = pd.read_sql_query("SELECT id, data, valor, local_origem, motivo FROM desafio_resgates", conexao)
-    df_l_atual = pd.read_sql_query("SELECT descricao, valor FROM lancamentos WHERE categoria = 'Resgate'", conexao)
+    df_r_atual = pd.read_sql_query(
+        "SELECT id, data, valor, local_origem, motivo FROM desafio_resgates",
+        conexao,
+    )
+    df_l_atual = pd.read_sql_query(
+        "SELECT descricao, valor FROM lancamentos WHERE categoria = 'Resgate'",
+        conexao,
+    )
 
     if not df_r_atual.empty:
       for _, row in df_r_atual.iterrows():
         loc = row["local_origem"]
         mot = str(row["motivo"]).strip() if pd.notna(row["motivo"]) else ""
-        desc_esperada = f"Resgate {loc}" if not mot else f"Resgate {loc} - {mot}"
-        
+        desc_esperada = (
+            f"Resgate {loc}" if not mot else f"Resgate {loc} - {mot}"
+        )
+
         existe_l = False
         if not df_l_atual.empty:
-          existe_l = not df_l_atual[(df_l_atual["descricao"] == desc_esperada) & (abs(df_l_atual["valor"] - float(row["valor"])) < 0.01)].empty
-        
+          existe_l = not df_l_atual[
+              (df_l_atual["descricao"] == desc_esperada)
+              & (abs(df_l_atual["valor"] - float(row["valor"])) < 0.01)
+          ].empty
+
         if not existe_l:
           cursor.execute(
-              "INSERT INTO lancamentos (data, tipo, categoria, descricao, valor) VALUES (%s, %s, %s, %s, %s)",
-              (row["data"], "Receita", "Resgate", desc_esperada, float(row["valor"])),
+              "INSERT INTO lancamentos (data, tipo, categoria, descricao,"
+              " valor) VALUES (%s, %s, %s, %s, %s)",
+              (
+                  row["data"],
+                  "Receita",
+                  "Resgate",
+                  desc_esperada,
+                  float(row["valor"]),
+              ),
           )
           conexao.commit()
 
@@ -117,8 +157,9 @@ garantir_tabelas_e_sincronizacao()
 st.title("💰 Controle Financeiro — Painel do Marcelo")
 st.subheader("🎯 Desafio Personalizado & Simulador de Antecipação")
 st.write(
-    "Controle seus aportes mensais, gerencie resgates, diversifique suas instituições financeiras"
-    " e simule o impacto de ganhos extras nas suas metas."
+    "Controle seus aportes mensais, gerencie resgates, diversifique suas"
+    " instituições financeiras e simule o impacto de ganhos extras nas suas"
+    " metas."
 )
 
 
@@ -179,26 +220,29 @@ with aba_desafio:
         conexao,
     )
     df_resgates = pd.read_sql_query(
-        "SELECT id, data, valor, local_origem, motivo FROM desafio_resgates ORDER BY id DESC",
+        "SELECT id, data, valor, local_origem, motivo FROM desafio_resgates"
+        " ORDER BY id DESC",
         conexao,
     )
     conexao.close()
   except Exception:
     df_aportes = pd.DataFrame(columns=["id", "data", "valor", "local_aplicacao"])
-    df_resgates = pd.DataFrame(columns=["id", "data", "valor", "local_origem", "motivo"])
+    df_resgates = pd.DataFrame(
+        columns=["id", "data", "valor", "local_origem", "motivo"]
+    )
 
   if not df_aportes.empty:
-    df_aportes["valor_num"] = (
-        pd.to_numeric(df_aportes["valor"], errors="coerce").fillna(0.0)
-    )
+    df_aportes["valor_num"] = pd.to_numeric(
+        df_aportes["valor"], errors="coerce"
+    ).fillna(0.0)
     total_aportado = df_aportes["valor_num"].sum()
   else:
     total_aportado = 0.0
 
   if not df_resgates.empty:
-    df_resgates["valor_num"] = (
-        pd.to_numeric(df_resgates["valor"], errors="coerce").fillna(0.0)
-    )
+    df_resgates["valor_num"] = pd.to_numeric(
+        df_resgates["valor"], errors="coerce"
+    ).fillna(0.0)
     total_resgatado = df_resgates["valor_num"].sum()
   else:
     total_resgatado = 0.0
@@ -288,7 +332,8 @@ with aba_desafio:
         conexao = obter_conexao()
         cursor = conexao.cursor()
         cursor.execute(
-            "INSERT INTO desafio_aportes (data, valor, local_aplicacao) VALUES (%s, %s, %s)",
+            "INSERT INTO desafio_aportes (data, valor, local_aplicacao) VALUES"
+            " (%s, %s, %s)",
             (data_aporte.strip(), valor_aporte, local_aporte),
         )
         conexao.commit()
@@ -322,10 +367,11 @@ with aba_desafio:
             "Data (DD/MM/AAAA)", value=str(dados_atual["data"])
         )
       with col_e2:
+        val_atual_num = max(1.0, float(dados_atual["valor_num"]))
         novo_valor = st.number_input(
             "Valor (R$)",
             min_value=1.0,
-            value=float(dados_atual["valor_num"]),
+            value=val_atual_num,
             step=10.0,
             format="%.2f",
         )
@@ -417,20 +463,36 @@ with aba_desafio:
 
   st.markdown("### 🏦 Saldo e Distribuição por Banco / Corretora (Líquido)")
   if not df_aportes.empty:
-    df_resumo_aportes = df_aportes.groupby("local_aplicacao")["valor_num"].sum().reset_index()
-    
+    df_resumo_aportes = (
+        df_aportes.groupby("local_aplicacao")["valor_num"].sum().reset_index()
+    )
+
     if not df_resgates.empty:
-      df_resumo_resgates = df_resgates.groupby("local_origem")["valor_num"].sum().reset_index()
-      df_resumo_bancos = pd.merge(df_resumo_aportes, df_resumo_resgates, left_on="local_aplicacao", right_on="local_origem", how="left").fillna(0)
-      df_resumo_bancos["valor_liquido"] = df_resumo_bancos["valor_num_x"] - df_resumo_bancos["valor_num_y"]
-      df_resumo_bancos = df_resumo_bancos[["local_aplicacao", "valor_liquido"]].rename(columns={"valor_liquido": "valor_num"})
+      df_resumo_resgates = (
+          df_resgates.groupby("local_origem")["valor_num"].sum().reset_index()
+      )
+      df_resumo_bancos = pd.merge(
+          df_resumo_aportes,
+          df_resumo_resgates,
+          left_on="local_aplicacao",
+          right_on="local_origem",
+          how="left",
+      ).fillna(0)
+      df_resumo_bancos["valor_liquido"] = (
+          df_resumo_bancos["valor_num_x"] - df_resumo_bancos["valor_num_y"]
+      )
+      df_resumo_bancos = df_resumo_bancos[
+          ["local_aplicacao", "valor_liquido"]
+      ].rename(columns={"valor_liquido": "valor_num"})
     else:
       df_resumo_bancos = df_resumo_aportes
 
     df_resumo_bancos = df_resumo_bancos[df_resumo_bancos["valor_num"] > 0]
-    
+
     if not df_resumo_bancos.empty and total_guardado > 0:
-      df_resumo_bancos["Valor Acumulado"] = df_resumo_bancos["valor_num"].apply(fmt_moeda)
+      df_resumo_bancos["Valor Acumulado"] = df_resumo_bancos["valor_num"].apply(
+          fmt_moeda
+      )
       df_resumo_bancos["% do Total"] = (
           (df_resumo_bancos["valor_num"] / total_guardado) * 100
       ).apply(lambda x: f"{x:.1f}%")
@@ -465,10 +527,15 @@ with aba_desafio:
 with aba_resgate:
   st.markdown("### 💸 Módulo de Resgates & Ajuste de Rendimentos")
   st.write(
-      "Registre resgates ou adicione correções monetárias/rendimentos para alinhar o saldo com o extrato da corretora."
+      "Registre resgates ou adicione correções monetárias/rendimentos para"
+      " alinhar o saldo com o extrato da corretora."
   )
 
-  tipo_operacao = st.radio("Escolha a Operação:", ["Registrar Resgate", "Registrar Rendimento / Correção Monetária"], horizontal=True)
+  tipo_operacao = st.radio(
+      "Escolha a Operação:",
+      ["Registrar Resgate", "Registrar Rendimento / Correção Monetária"],
+      horizontal=True,
+  )
 
   if tipo_operacao == "Registrar Resgate":
     with st.form("form_novo_resgate"):
@@ -499,35 +566,59 @@ with aba_resgate:
             "Outro (Personalizado)",
         ]
         local_origem_sel = st.selectbox(
-            "Instituição de Origem do Resgate", locais_resgate, key="resgate_local"
+            "Instituição de Origem do Resgate",
+            locais_resgate,
+            key="resgate_local",
         )
 
       origem_personalizada = st.text_input(
           "Se 'Outro (Personalizado)', digite o nome:",
           key="resgate_outro_local",
       )
-      
+
       motivo_resgate = st.text_input(
           "Motivo do Resgate / Destino (Ex: Emergência, Oportunidade, etc.)",
           key="resgate_motivo",
       )
 
       if st.form_submit_button("📤 Registrar Resgate"):
-        origem_final = origem_personalizada.strip() if local_origem_sel == "Outro (Personalizado)" and origem_personalizada.strip() else local_origem_sel
+        origem_final = (
+            origem_personalizada.strip()
+            if local_origem_sel == "Outro (Personalizado)"
+            and origem_personalizada.strip()
+            else local_origem_sel
+        )
         try:
           datetime.strptime(data_resgate.strip(), "%d/%m/%Y")
           conexao = obter_conexao()
           cursor = conexao.cursor()
-          
+
           cursor.execute(
-              "INSERT INTO desafio_resgates (data, valor, local_origem, motivo) VALUES (%s, %s, %s, %s)",
-              (data_resgate.strip(), valor_resgate, origem_final, motivo_resgate.strip()),
+              "INSERT INTO desafio_resgates (data, valor, local_origem,"
+              " motivo) VALUES (%s, %s, %s, %s)",
+              (
+                  data_resgate.strip(),
+                  valor_resgate,
+                  origem_final,
+                  motivo_resgate.strip(),
+              ),
           )
 
-          desc_lancamento = f"Resgate {origem_final}" if not motivo_resgate.strip() else f"Resgate {origem_final} - {motivo_resgate.strip()}"
+          desc_lancamento = (
+              f"Resgate {origem_final}"
+              if not motivo_resgate.strip()
+              else f"Resgate {origem_final} - {motivo_resgate.strip()}"
+          )
           cursor.execute(
-              "INSERT INTO lancamentos (data, tipo, categoria, descricao, valor) VALUES (%s, %s, %s, %s, %s)",
-              (data_resgate.strip(), "Receita", "Resgate", desc_lancamento, valor_resgate),
+              "INSERT INTO lancamentos (data, tipo, categoria, descricao,"
+              " valor) VALUES (%s, %s, %s, %s, %s)",
+              (
+                  data_resgate.strip(),
+                  "Receita",
+                  "Resgate",
+                  desc_lancamento,
+                  valor_resgate,
+              ),
           )
 
           conexao.commit()
@@ -541,21 +632,38 @@ with aba_resgate:
           st.error(f"Erro ao salvar resgate: {e}")
   else:
     with st.form("form_novo_rendimento"):
-      st.info("💡 **Ajuste de Corretora:** Lançar rendimentos aumenta o total aportado/acumulado proporcionalmente, permitindo corrigir pequenas variações de juros.")
+      st.info(
+          "💡 **Ajuste de Corretora:** Lançar rendimentos aumenta o total"
+          " aportado/acumulado proporcionalmente, permitindo corrigir pequenas"
+          " variações de juros."
+      )
       col_rend1, col_rend2, col_rend3 = st.columns(3)
       with col_rend1:
-        data_rend = st.text_input("Data do Rendimento (DD/MM/AAAA)", value=datetime.now().strftime("%d/%m/%Y"))
+        data_rend = st.text_input(
+            "Data do Rendimento (DD/MM/AAAA)",
+            value=datetime.now().strftime("%d/%m/%Y"),
+        )
       with col_rend2:
-        valor_rend = st.number_input("Valor da Correção / Juros (R$)", min_value=0.01, value=0.76, step=0.10, format="%.2f")
+        # CORREÇÃO APLICADA AQUI: min_value=0.01 e valor padrão seguro para evitar erros abaixo do limite
+        valor_rend = st.number_input(
+            "Valor da Correção / Juros (R$)",
+            min_value=0.01,
+            value=max(0.01, 0.76),
+            step=0.10,
+            format="%.2f",
+        )
       with col_rend3:
-        local_rend = st.selectbox("Instituição", [
-            "Banco Itaú",
-            "Nomad (Investimentos em Dólar)",
-            "Sofisa Direto (CDB 105% CDI)",
-            "Banco Inter (CDB Liquidez Diária)",
-            "Nubank (Caixinha / RDB 100% CDI)",
-            "Tesouro Selic (Tesouro Direto)"
-        ])
+        local_rend = st.selectbox(
+            "Instituição",
+            [
+                "Banco Itaú",
+                "Nomad (Investimentos em Dólar)",
+                "Sofisa Direto (CDB 105% CDI)",
+                "Banco Inter (CDB Liquidez Diária)",
+                "Nubank (Caixinha / RDB 100% CDI)",
+                "Tesouro Selic (Tesouro Direto)",
+            ],
+        )
 
       if st.form_submit_button("📈 Salvar Correção / Rendimento"):
         try:
@@ -564,7 +672,8 @@ with aba_resgate:
           cursor = conexao.cursor()
           # Registra como aporte de ajuste para somar no saldo da instituição
           cursor.execute(
-              "INSERT INTO desafio_aportes (data, valor, local_aplicacao) VALUES (%s, %s, %s)",
+              "INSERT INTO desafio_aportes (data, valor, local_aplicacao) VALUES"
+              " (%s, %s, %s)",
               (data_rend.strip(), valor_rend, f"{local_rend} (Rendimento)"),
           )
           conexao.commit()
@@ -588,7 +697,9 @@ with aba_resgate:
             "motivo": "Motivo / Destino",
         }
     )
-    df_tabela_resgates["Valor Resgatado"] = df_tabela_resgates["Valor Resgatado"].apply(fmt_moeda)
+    df_tabela_resgates["Valor Resgatado"] = df_tabela_resgates[
+        "Valor Resgatado"
+    ].apply(fmt_moeda)
     st.dataframe(
         df_tabela_resgates.set_index("id"), use_container_width=True, height=200
     )
@@ -597,24 +708,39 @@ with aba_resgate:
     id_resgate_excluir = st.selectbox(
         "Selecione o ID do resgate que deseja excluir:",
         df_resgates["id"].tolist(),
-        key="excluir_resg_id"
+        key="excluir_resg_id",
     )
     if st.button("Excluir Resgate Selecionado"):
       try:
         conexao = obter_conexao()
         cursor = conexao.cursor()
-        
-        cursor.execute("SELECT data, valor, local_origem, motivo FROM desafio_resgates WHERE id = %s", (int(id_resgate_excluir),))
+
+        cursor.execute(
+            "SELECT data, valor, local_origem, motivo FROM desafio_resgates"
+            " WHERE id = %s",
+            (int(id_resgate_excluir),),
+        )
         row_del = cursor.fetchone()
-        
+
         if row_del:
           dt_del, val_del, loc_del, mot_del = row_del
           mot_del_str = str(mot_del).strip() if mot_del else ""
-          desc_del = f"Resgate {loc_del}" if not mot_del_str else f"Resgate {loc_del} - {mot_del_str}"
-          
-          cursor.execute("DELETE FROM lancamentos WHERE categoria = 'Resgate' AND descricao = %s AND valor = %s", (desc_del, float(val_del)))
+          desc_del = (
+              f"Resgate {loc_del}"
+              if not mot_del_str
+              else f"Resgate {loc_del} - {mot_del_str}"
+          )
 
-        cursor.execute("DELETE FROM desafio_resgates WHERE id = %s", (int(id_resgate_excluir),))
+          cursor.execute(
+              "DELETE FROM lancamentos WHERE categoria = 'Resgate' AND"
+              " descricao = %s AND valor = %s",
+              (desc_del, float(val_del)),
+          )
+
+        cursor.execute(
+            "DELETE FROM desafio_resgates WHERE id = %s",
+            (int(id_resgate_excluir),),
+        )
         conexao.commit()
         cursor.close()
         conexao.close()
