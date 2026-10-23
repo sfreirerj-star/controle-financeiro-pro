@@ -88,15 +88,28 @@ else:
   df_filtrado["valor"] = pd.to_numeric(
       df_filtrado["valor"], errors="coerce"
   ).fillna(0.0)
-  rec_tot = df_filtrado[df_filtrado["tipo"].str.lower() == "receita"][
-      "valor"
-  ].sum()
+
+  # Filtro de receitas de trabalho/salário (exclui a categoria 'resgate')
+  rec_tot = df_filtrado[
+      (df_filtrado["tipo"].str.lower() == "receita")
+      & (df_filtrado["categoria"].str.strip().str.lower() != "resgate")
+  ]["valor"].sum()
+
   desp_tot = df_filtrado[df_filtrado["tipo"].str.lower() == "despesa"][
       "valor"
   ].sum()
 
   tot_ap = (
-      pd.to_numeric(df_aportes["valor"], errors="coerce").fillna(0.0).sum()
+      pd.to_numeric(
+          df_aportes[
+              ~df_aportes["local_aplicacao"].str.contains(
+                  "Rendimento", case=False, na=False
+              )
+          ]["valor"],
+          errors="coerce",
+      )
+      .fillna(0.0)
+      .sum()
       if not df_aportes.empty
       else 0.0
   )

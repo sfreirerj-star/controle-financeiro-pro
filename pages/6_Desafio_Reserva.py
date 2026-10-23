@@ -6,39 +6,29 @@ import psycopg2
 import streamlit as st
 from utils import aplicar_estilo_moderno
 
-st.set_page_config(page_title="Título da Página", layout="wide")
-aplicar_estilo_moderno()  # <-- Essencial em cada página
-
-# Adiciona a pasta raiz ao caminho do Python para conseguir importar o database.py
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-try:
-  from database import inicializar_banco, obter_conexao
-
-  # Garante que as tabelas estão prontas e abre a conexão correta
-  inicializar_banco()
-except ImportError:
-
-  def inicializar_banco():
-    pass
-
-
 st.set_page_config(
     page_title="Desafio Reserva & Simulador - Painel do Marcelo",
     page_icon="🎯",
     layout="wide",
 )
+aplicar_estilo_moderno()
 
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+try:
+  from database import inicializar_banco, obter_conexao
+  inicializar_banco()
+except ImportError:
+  def inicializar_banco():
+    pass
 
 def obter_conexao():
   return psycopg2.connect(st.secrets["DATABASE_URL"])
-
 
 def garantir_tabelas_e_sincronizacao():
   try:
     conexao = obter_conexao()
     cursor = conexao.cursor()
 
-    # 1. Criação das tabelas se não existirem
     cursor.execute("""
             CREATE TABLE IF NOT EXISTS desafio_aportes (
                 id SERIAL PRIMARY KEY,
@@ -58,7 +48,6 @@ def garantir_tabelas_e_sincronizacao():
         """)
     conexao.commit()
 
-    # 2. Sincronização Inteligente de Resgates (Apenas Resgates entram no caixa como Receita)
     df_r = pd.read_sql_query(
         "SELECT id, data, valor, local_origem, motivo FROM desafio_resgates",
         conexao,
@@ -69,7 +58,6 @@ def garantir_tabelas_e_sincronizacao():
         conexao,
     )
 
-    # Sincroniza Resgates de 'lancamentos' para 'desafio_resgates'
     if not df_l.empty:
       for _, row_l in df_l.iterrows():
         desc = str(row_l["descricao"])
@@ -107,7 +95,6 @@ def garantir_tabelas_e_sincronizacao():
           )
           conexao.commit()
 
-    # Sincroniza Resgates de 'desafio_resgates' para 'lancamentos' caso falte
     df_r_atual = pd.read_sql_query(
         "SELECT id, data, valor, local_origem, motivo FROM desafio_resgates",
         conexao,
@@ -151,7 +138,6 @@ def garantir_tabelas_e_sincronizacao():
   except Exception as e:
     print(f"Erro na sincronização: {e}")
 
-
 garantir_tabelas_e_sincronizacao()
 
 st.title("💰 Controle Financeiro — Painel do Marcelo")
@@ -162,12 +148,10 @@ st.write(
     " metas."
 )
 
-
 def fmt_moeda(v):
   return (
       f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
   )
-
 
 aba_desafio, aba_resgate, aba_simulador, aba_orientacao = st.tabs([
     "🎯 Meu Desafio & Aportes",
@@ -176,7 +160,6 @@ aba_desafio, aba_resgate, aba_simulador, aba_orientacao = st.tabs([
     "📈 Consultoria Diária de Investimentos (Moderado)",
 ])
 
-# --- ABA 1: MEU DESAFIO E APORTES ---
 with aba_desafio:
   with st.expander(
       "⚙️ Configurar / Selecionar Meta Mensal (Inclui CPROEIS)", expanded=True
@@ -248,7 +231,6 @@ with aba_desafio:
     total_resgatado = 0.0
 
   total_guardado = total_aportado - total_resgatado
-
   progresso_perc = (
       min(total_guardado / meta_total, 1.0) if meta_total > 0 else 0.0
   )
@@ -331,20 +313,15 @@ with aba_desafio:
         datetime.strptime(data_aporte.strip(), "%d/%m/%Y")
         conexao = obter_conexao()
         cursor = conexao.cursor()
-        
-        # 1. Salva o aporte na tabela do desafio de investimentos
         cursor.execute(
             "INSERT INTO desafio_aportes (data, valor, local_aplicacao) VALUES"
             " (%s, %s, %s)",
             (data_aporte.strip(), valor_aporte, local_aporte),
         )
-        
-        # 2. Espelha automaticamente na conta corrente como débito (Aporte) para abater do saldo disponível
         cursor.execute(
             "INSERT INTO lancamentos (data, tipo, categoria, descricao, valor) VALUES (%s, %s, %s, %s, %s)",
             (data_aporte.strip(), "Aporte", "Investimento", f"Aporte {local_aporte}", valor_aporte)
         )
-
         conexao.commit()
         cursor.close()
         conexao.close()
@@ -357,7 +334,6 @@ with aba_desafio:
 
   st.divider()
 
-  # --- SEÇÃO DE GERENCIAMENTO (EDITAR / EXCLUIR) ---
   st.markdown("### ✏️ Gerenciar, Corrigir ou Excluir Lançamentos")
   if not df_aportes.empty:
     ids_disponiveis = df_aportes["id"].tolist()
@@ -536,8 +512,6 @@ with aba_desafio:
   else:
     st.info("Nenhum aporte registrado ainda.")
 
-
-# --- ABA 2: MÓDULO DE RESGATES E CORREÇÃO MONETÁRIA ---
 with aba_resgate:
   st.markdown("### 💸 Módulo de Resgates & Ajuste de Rendimentos")
   st.write(
@@ -682,11 +656,10 @@ with aba_resgate:
           datetime.strptime(data_rend.strip(), "%d/%m/%Y")
           conexao = obter_conexao()
           cursor = conexao.cursor()
-          # Registra estritamente como aporte na tabela de investimentos (sem mexer na conta corrente)
           cursor.execute(
               "INSERT INTO desafio_aportes (data, valor, local_aplicacao) VALUES"
               " (%s, %s, %s)",
-              (data_rend.strip(), valor_rend, local_rend),
+              (data_rend.strip(), valor_rend, f"{local_rend} (Rendimento)"),
           )
           conexao.commit()
           cursor.close()
@@ -763,7 +736,6 @@ with aba_resgate:
   else:
     st.info("Nenhum resgate registrado até o momento.")
 
-# --- ABA 3: SIMULADOR DE ANTECIPAÇÃO DE METAS ---
 with aba_simulador:
   st.markdown("### 🎯 Simulador de Antecipação de Metas")
   st.write(
@@ -805,7 +777,6 @@ with aba_simulador:
   st.divider()
 
   falta_para_meta = max(0.0, meta_alvo_sim - total_guardado)
-
   meses_sem_extra = (
       (falta_para_meta / aporte_mensal_sim) if aporte_mensal_sim > 0 else 0.0
   )
@@ -855,7 +826,6 @@ with aba_simulador:
 
   st.divider()
 
-  # --- SIMULADOR AVANÇADO DE CENÁRIOS DE POUPANÇA ---
   st.markdown(
       "### 🧮 Simulador Avançado de Prazo e Juros Compostos (Reserva de"
       " Emergência)"
@@ -943,7 +913,6 @@ with aba_simulador:
       ]
   )
 
-# --- ABA 4: CONSULTORIA DIÁRIA DE INVESTIMENTOS (MODERADO) ---
 with aba_orientacao:
   st.markdown("### 📈 Painel Diário de Alocação & Mercado (Perfil Moderado)")
   st.write(
