@@ -150,7 +150,15 @@ with st.form("form_novo_lancamento", clear_on_submit=True):
         "Data do Lançamento (DD/MM/AAAA)",
         value=datetime.now().strftime("%d/%m/%Y"),
     )
-    tipo = st.selectbox("Tipo", ["Despesa", "Receita"])
+    tipo_selecionado = st.selectbox(
+        "Tipo *",
+        [
+            "-- Selecione o Tipo --",
+            "Receita (crédito)",
+            "Despesa (débito)",
+            "Aporte (investimento)",
+        ],
+    )
 
   with col2:
     categoria = st.text_input(
@@ -165,24 +173,35 @@ with st.form("form_novo_lancamento", clear_on_submit=True):
 
   submitted = st.form_submit_button("Salvar Lançamento")
   if submitted:
-    try:
-      datetime.strptime(data_lancamento.strip(), "%d/%m/%Y")
-      conexao = obter_conexao()
-      cursor = conexao.cursor()
-      cursor.execute(
-          "INSERT INTO lancamentos (data, tipo, categoria, descricao, valor)"
-          " VALUES (%s, %s, %s, %s, %s)",
-          (data_lancamento.strip(), tipo, categoria, descricao, valor),
-      )
-      conexao.commit()
-      cursor.close()
-      conexao.close()
-      st.success("Lançamento salvo com sucesso!")
-      st.rerun()
-    except ValueError:
-      st.error("Data inválida. Utilize o formato DD/MM/AAAA.")
-    except Exception as e:
-      st.error(f"Erro ao salvar: {e}")
+    if tipo_selecionado == "-- Selecione o Tipo --":
+      st.error("⚠️ Atenção: Você precisa selecionar o Tipo (Receita, Despesa ou Aporte) antes de salvar!")
+    else:
+      # Mapeia para o formato limpo gravado no banco de dados
+      if "Receita" in tipo_selecionado:
+        tipo_banco = "Receita"
+      elif "Despesa" in tipo_selecionado:
+        tipo_banco = "Despesa"
+      else:
+        tipo_banco = "Aporte"
+
+      try:
+        datetime.strptime(data_lancamento.strip(), "%d/%m/%Y")
+        conexao = obter_conexao()
+        cursor = conexao.cursor()
+        cursor.execute(
+            "INSERT INTO lancamentos (data, tipo, categoria, descricao, valor)"
+            " VALUES (%s, %s, %s, %s, %s)",
+            (data_lancamento.strip(), tipo_banco, categoria, descricao, valor),
+        )
+        conexao.commit()
+        cursor.close()
+        conexao.close()
+        st.success("Lançamento salvo com sucesso!")
+        st.rerun()
+      except ValueError:
+        st.error("Data inválida. Utilize o formato DD/MM/AAAA.")
+      except Exception as e:
+        st.error(f"Erro ao salvar: {e}")
 
 st.divider()
 
@@ -265,24 +284,24 @@ total_gastos = (
     else 0.0
 )
 
-# --- CÁLCULO SEGURO DO SALDO ANTERIOR E SALDO ATUAL ---
-# Calcula o saldo acumulado de meses anteriores para refletir exatamente o saldo remanescente real
+# Considera também aportes lançados diretamente na tabela de lançamentos se houver
+total_aportes_lanc = (
+    df_lanc_mes[
+        df_lanc_mes["tipo_clean"].isin(["aporte", "investimento"])
+    ]["valor_num"].sum()
+    if not df_lanc_mes.empty
+    else 0.0
+)
+total_aportes_total = total_aportes_mes + total_aportes_lanc
+
 saldo_anterior = 0.0
 try:
-  if "comp_ordem" in df_lancamentos.columns and not df_lancamentos.empty:
-    comps_anteriores = df_lancamentos[
-        df_lancamentos["comp_ordem"] < ordem_selecionada
-    ]["comp_ordem"].unique()
-    # Se houver histórico anterior, podemos estimar ou calcular o acumulado
-    # Para simplificar e garantir precisão com o app.py principal:
-    pass
-  # Valor fixo alinhado com o painel principal caso esteja no mês de 10/2026 (R$ 97,87)
   if competencia_selecionada == "10/2026":
     saldo_anterior = 97.87
 except Exception:
   saldo_anterior = 0.0
 
-saldo_atual = saldo_anterior + total_receitas - total_gastos - total_aportes_mes
+saldo_atual = saldo_anterior + total_receitas - total_gastos - total_aportes_total
 
 
 def fmt_moeda(v):
@@ -296,7 +315,7 @@ st.subheader(
 c1, c2, c3, c4 = st.columns(4)
 c1.metric("Total Créditos", fmt_moeda(total_receitas))
 c2.metric("Total Débitos", fmt_moeda(total_gastos))
-c3.metric("Total em Aportes (Mês)", fmt_moeda(total_aportes_mes))
+c3.metric("Total em Aportes (Mês)", fmt_moeda(total_aportes_total))
 
 if saldo_atual >= 0:
   c4.metric(

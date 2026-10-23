@@ -244,11 +244,26 @@ if not df.empty:
 
     with col_edit1:
       st.markdown("### 🔄 Atualizar Lançamento")
-      st.info(
-          f"💡 **Tipo Fixo:** Este registro é uma **{dados_atuais['tipo']}**."
-      )
+
+      # Determina o índice padrão do tipo atual no selectbox
+      opcoes_tipo = [
+          "Receita (crédito)",
+          "Despesa (débito)",
+          "Aporte (investimento)",
+      ]
+      tipo_atual_raw = str(dados_atuais["tipo"]).strip().lower()
+
+      if "rec" in tipo_atual_raw or "cred" in tipo_atual_raw:
+        idx_padrao = 0
+      elif "apo" in tipo_atual_raw or "inv" in tipo_atual_raw:
+        idx_padrao = 2
+      else:
+        idx_padrao = 1
 
       with st.form("form_edicao"):
+        novo_tipo_sel = st.selectbox(
+            "Tipo de Lançamento", opcoes_tipo, index=idx_padrao
+        )
         nova_categoria = st.text_input(
             "Categoria", value=dados_atuais["categoria"]
         )
@@ -268,6 +283,14 @@ if not df.empty:
         salvar_alteracao = st.form_submit_button("Salvar Alterações")
 
         if salvar_alteracao:
+          # Mapeamento do tipo limpo para o banco de dados
+          if "Receita" in novo_tipo_sel:
+            tipo_banco = "Receita"
+          elif "Despesa" in novo_tipo_sel:
+            tipo_banco = "Despesa"
+          else:
+            tipo_banco = "Aporte"
+
           try:
             datetime.strptime(nova_data.strip(), "%d/%m/%Y")
             conexao = obter_conexao()
@@ -277,11 +300,12 @@ if not df.empty:
             cursor.execute(
                 """
                 UPDATE lancamentos 
-                SET data = %s, categoria = %s, descricao = %s, valor = %s
+                SET data = %s, tipo = %s, categoria = %s, descricao = %s, valor = %s
                 WHERE id = %s
                 """,
                 (
                     nova_data.strip(),
+                    tipo_banco,
                     nova_categoria.strip(),
                     nova_descricao.strip(),
                     valor_limpo,
@@ -291,7 +315,7 @@ if not df.empty:
             conexao.commit()
             cursor.close()
             conexao.close()
-            st.success("Lançamento atualizado com sucesso!")
+            st.success(f"Lançamento ID {id_str} atualizado para {tipo_banco} com sucesso!")
             st.rerun()
           except ValueError:
             st.error("A data digitada é inválida. Utilize o formato DD/MM/AAAA.")
@@ -309,7 +333,6 @@ if not df.empty:
           conexao = obter_conexao()
           cursor = conexao.cursor()
           
-          # Caso o item apagado seja um Resgate, remove da tabela desafio_resgates também
           desc_item = dados_atuais["descricao"]
           val_item = float(dados_atuais["valor"])
           
@@ -319,7 +342,7 @@ if not df.empty:
           conexao.commit()
           cursor.close()
           conexao.close()
-          st.success("Lançamento e resgate excluídos com sucesso!")
+          st.success("Lançamento excluído com sucesso!")
           st.rerun()
         except Exception as e:
           st.error(f"Erro ao excluir: {e}")
