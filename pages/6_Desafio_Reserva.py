@@ -616,8 +616,8 @@ with aba_resgate:
   else:
     with st.form("form_novo_rendimento"):
       st.info(
-          "💡 **Ajuste de Corretora:** O valor do rendimento será somado diretamente "
-          "ao saldo do último aporte existente na instituição selecionada, sem gerar novos lançamentos."
+          "💡 **Ajuste de Corretora:** O rendimento somará ao saldo do investimento "
+          "E entrará como Receita (Juros/Rendimento) no seu fluxo de caixa para zerar a diferença da conta."
       )
       col_rend1, col_rend2, col_rend3 = st.columns(3)
       with col_rend1:
@@ -646,13 +646,13 @@ with aba_resgate:
             ],
         )
 
-      if st.form_submit_button("📈 Somar Rendimento ao Saldo"):
+      if st.form_submit_button("📈 Somar Rendimento e Registrar Receita"):
         try:
           datetime.strptime(data_rend.strip(), "%d/%m/%Y")
           conexao = obter_conexao()
           cursor = conexao.cursor()
           
-          # 1. Procura o ID do último aporte cadastrado para essa instituição exata
+          # 1. Atualiza o saldo do último aporte existente na instituição selecionada
           cursor.execute(
               "SELECT id, valor FROM desafio_aportes WHERE local_aplicacao = %s ORDER BY id DESC LIMIT 1",
               (local_rend,)
@@ -662,22 +662,26 @@ with aba_resgate:
           if registro_existente:
             id_alvo, valor_atual = registro_existente
             novo_valor_total = float(valor_atual) + float(valor_rend)
-            # Atualiza o valor somando o rendimento diretamente ao registro existente
             cursor.execute(
                 "UPDATE desafio_aportes SET valor = %s WHERE id = %s",
                 (novo_valor_total, id_alvo)
             )
           else:
-            # Caso não exista nenhum aporte prévio, cria o primeiro registro com o valor limpo
             cursor.execute(
                 "INSERT INTO desafio_aportes (data, valor, local_aplicacao) VALUES (%s, %s, %s)",
                 (data_rend.strip(), valor_rend, local_rend)
             )
+          
+          # 2. Registra o rendimento como uma Receita no fluxo de caixa (para fechar o saldo do banco em R$ 91,37)
+          cursor.execute(
+              "INSERT INTO lancamentos (data, tipo, categoria, descricao, valor) VALUES (%s, %s, %s, %s, %s)",
+              (data_rend.strip(), "Receita", "Rendimento", f"Rendimento / Juros {local_rend}", float(valor_rend))
+          )
             
           conexao.commit()
           cursor.close()
           conexao.close()
-          st.success(f"Rendimento de R$ {valor_rend:,.2f} somado com sucesso ao saldo do {local_rend}!")
+          st.success(f"Rendimento de R$ {valor_rend:,.2f} somado ao investimento e lançado como Receita no caixa com sucesso!")
           st.rerun()
         except Exception as e:
           st.error(f"Erro ao aplicar rendimento: {e}")
@@ -949,7 +953,7 @@ with aba_orientacao:
           "Nomad (Investimentos em Dólar)",
           "Sofisa Direto",
           "Banco Inter",
-          "Tesouro Direto",
+          "Tesouro Selic (Tesouro Direto)",
       ],
       "Produto Recomendado": [
           "CDBs e Fundos DI",
