@@ -619,9 +619,9 @@ with aba_resgate:
             st.error(f"Erro ao salvar resgate: {e}")
   else:
     with st.form("form_novo_rendimento"):
-      st.info(
-          "💡 **Ajuste de Corretora:** O rendimento será lançado como "
-          "Receita (Renda Extra / Juros) no fluxo de caixa para ajustar a diferença da conta, preservando o saldo da aplicação."
+     st.info(
+          "💡 **Orientação de Uso:** Utilize este formulário para registrar rendimentos de liquidez diária que caíram "
+          "efetivamente na sua conta corrente (lançando-os como Receita para alinhar o saldo do banco), preservando o saldo da aplicação."
       )
       col_rend1, col_rend2, col_rend3 = st.columns(3)
       with col_rend1:
