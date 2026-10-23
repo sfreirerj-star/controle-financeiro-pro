@@ -115,7 +115,7 @@ st.write(
     " relatórios, acompanhe o fechamento mês a mês e projete seu saldo futuro."
 )
 
-# Configuração da barra lateral e obtenção da competência selecionada
+# Configuração da barra lateral
 try:
   conexao_sidebar = obter_conexao()
   competencia_selecionada, _ = configurar_sidebar_competencia(
@@ -404,12 +404,12 @@ if not df_lancamentos.empty:
           "Nenhum registro disponível para gerenciar com os filtros atuais."
       )
 
-  # --- ABA 2: FECHAMENTO DE MÊS CORRIGIDO ---
+  # --- ABA 2: FECHAMENTO DE MÊS LIMPO E MATEMÁTICO ---
   with aba2:
     st.markdown("### 📅 Fechamento Mensal e Evolução de Saldo")
     st.write(
         "Visão consolidada de entradas, saídas, resultado líquido do mês e o"
-        " saldo remanescente acumulado (descontados os aportes em investimentos)."
+        " saldo remanescente acumulado."
     )
 
     df_lancamentos["comp_ordem"] = df_lancamentos["data"].apply(lambda x: extrair_competencia(x)[1])
@@ -460,6 +460,7 @@ if not df_lancamentos.empty:
             df_lan_ord["tipo"].str.strip().str.lower().isin(["despesa", "débito", "debito", "saida"])
         ]["valor"].astype(float).sum() if not df_lan_ord.empty else 0.0
 
+        # Aportes (dinheiro que saiu para investimentos)
         apo_c = (
             df_aportes[
                 (df_aportes["comp_ordem"] == ord_comp)
@@ -469,21 +470,25 @@ if not df_lancamentos.empty:
             else 0.0
         )
 
+        # Resgates (dinheiro que voltou dos investimentos)
         res_c = (
             df_resgates[df_resgates["comp_ordem"] == ord_comp]["valor_num"].sum()
             if not df_resgates.empty and "valor_num" in df_resgates.columns
             else 0.0
         )
 
-        # O impacto no caixa considera as entradas, menos as saídas de despesas, menos os aportes líquidos
-        resultado_mes = rec_c - gas_c - (apo_c - res_c)
+        # Investimento líquido simples do mês (Aportes - Resgates)
+        invest_liquido = apo_c - res_c
+
+        # Resultado do Mês = Entradas - Saídas - Investimento Líquido
+        resultado_mes = rec_c - gas_c - invest_liquido
         saldo_acumulado_loop += resultado_mes
 
         dados_fechamento.append({
             "Mês/Ano": comp_formatada,
             "Total Entradas": fmt_moeda(rec_c),
             "Total Saídas": fmt_moeda(gas_c),
-            "Invest. Líquido": fmt_moeda(apo_c - res_c),
+            "Invest. Líquido": fmt_moeda(invest_liquido),
             "Resultado do Mês": fmt_moeda(resultado_mes),
             "Saldo Remanescente (Acumulado)": fmt_moeda(saldo_acumulado_loop),
         })
@@ -504,10 +509,8 @@ if not df_lancamentos.empty:
     )
 
     if not df_lancamentos.empty and todas_ordens:
-      # Pega o saldo acumulado atual real da última competência
       saldo_atual_base = saldo_acumulado_loop
 
-      # Média de entradas e saídas operacionais
       media_entradas_hist = df_lancamentos[
           df_lancamentos["tipo"].str.strip().str.lower().isin(["receita", "crédito", "credito", "entrada"])
       ]["valor"].astype(float).mean() if not df_lancamentos.empty else 0.0
