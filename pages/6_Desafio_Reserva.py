@@ -338,7 +338,7 @@ with aba_desafio:
   if not df_aportes.empty:
     ids_disponiveis = df_aportes["id"].tolist()
     id_selecionado = st.selectbox(
-        "Selecione o ID du lançamento que deseja alterar ou excluir:",
+        "Selecione o ID do lançamento que deseja alterar ou excluir:",
         ids_disponiveis,
     )
 
@@ -616,8 +616,8 @@ with aba_resgate:
   else:
     with st.form("form_novo_rendimento"):
       st.info(
-          "💡 **Ajuste de Corretora:** Lançar rendimentos soma diretamente ao"
-          " saldo da instituição selecionada, sem gerar entradas na conta corrente."
+          "💡 **Ajuste de Corretora:** O valor do rendimento será somado diretamente "
+          "ao saldo do último aporte existente na instituição selecionada, sem gerar novos lançamentos."
       )
       col_rend1, col_rend2, col_rend3 = st.columns(3)
       with col_rend1:
@@ -646,21 +646,38 @@ with aba_resgate:
             ],
         )
 
-      if st.form_submit_button("📈 Salvar Correção / Rendimento"):
+      if st.form_submit_button("📈 Somar Rendimento ao Saldo"):
         try:
           datetime.strptime(data_rend.strip(), "%d/%m/%Y")
           conexao = obter_conexao()
           cursor = conexao.cursor()
-          # Insere diretamente na tabela de aportes com o nome limpo para somar ao saldo da instituição
+          
+          # 1. Procura o ID do último aporte cadastrado para essa instituição exata
           cursor.execute(
-              "INSERT INTO desafio_aportes (data, valor, local_aplicacao) VALUES"
-              " (%s, %s, %s)",
-              (data_rend.strip(), valor_rend, local_rend),
+              "SELECT id, valor FROM desafio_aportes WHERE local_aplicacao = %s ORDER BY id DESC LIMIT 1",
+              (local_rend,)
           )
+          registro_existente = cursor.fetchone()
+          
+          if registro_existente:
+            id_alvo, valor_atual = registro_existente
+            novo_valor_total = float(valor_atual) + float(valor_rend)
+            # Atualiza o valor somando o rendimento diretamente ao registro existente
+            cursor.execute(
+                "UPDATE desafio_aportes SET valor = %s WHERE id = %s",
+                (novo_valor_total, id_alvo)
+            )
+          else:
+            # Caso não exista nenhum aporte prévio, cria o primeiro registro com o valor limpo
+            cursor.execute(
+                "INSERT INTO desafio_aportes (data, valor, local_aplicacao) VALUES (%s, %s, %s)",
+                (data_rend.strip(), valor_rend, local_rend)
+            )
+            
           conexao.commit()
           cursor.close()
           conexao.close()
-          st.success("Correção monetária / rendimento aplicado e somado ao saldo da instituição com sucesso!")
+          st.success(f"Rendimento de R$ {valor_rend:,.2f} somado com sucesso ao saldo do {local_rend}!")
           st.rerun()
         except Exception as e:
           st.error(f"Erro ao aplicar rendimento: {e}")
@@ -929,7 +946,7 @@ with aba_orientacao:
   data_instituicoes = {
       "Instituição / Corretora": [
           "Banco Itaú",
-          "Nomad (Global)",
+          "Nomad (Investimentos em Dólar)",
           "Sofisa Direto",
           "Banco Inter",
           "Tesouro Direto",
@@ -974,7 +991,7 @@ with aba_orientacao:
   )
   check_2 = st.checkbox(
       "Meus investimentos estão divididos em pelo menos duas instituições"
-      " diferentes para mitigar risco sistêmico."
+      " differentes para mitigar risco sistêmico."
   )
   check_3 = st.checkbox(
       "Acompanho periodicamente minhas despesas e receitas mensais para"
