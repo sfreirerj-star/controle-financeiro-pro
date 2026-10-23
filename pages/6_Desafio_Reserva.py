@@ -540,6 +540,7 @@ with aba_resgate:
         )
       with col_r3:
         locais_resgate = [
+            "Selecione...",
             "Banco Itaú",
             "Nomad (Investimentos em Dólar)",
             "Sofisa Direto (CDB 105% CDI)",
@@ -565,59 +566,62 @@ with aba_resgate:
       )
 
       if st.form_submit_button("📤 Registrar Resgate"):
-        origem_final = (
-            origem_personalizada.strip()
-            if local_origem_sel == "Outro (Personalizado)"
-            and origem_personalizada.strip()
-            else local_origem_sel
-        )
-        try:
-          datetime.strptime(data_resgate.strip(), "%d/%m/%Y")
-          conexao = obter_conexao()
-          cursor = conexao.cursor()
-
-          cursor.execute(
-              "INSERT INTO desafio_resgates (data, valor, local_origem,"
-              " motivo) VALUES (%s, %s, %s, %s)",
-              (
-                  data_resgate.strip(),
-                  valor_resgate,
-                  origem_final,
-                  motivo_resgate.strip(),
-              ),
+        if local_origem_sel == "Selecione...":
+          st.error("Por favor, selecione uma instituição de origem válida.")
+        else:
+          origem_final = (
+              origem_personalizada.strip()
+              if local_origem_sel == "Outro (Personalizado)"
+              and origem_personalizada.strip()
+              else local_origem_sel
           )
+          try:
+            datetime.strptime(data_resgate.strip(), "%d/%m/%Y")
+            conexao = obter_conexao()
+            cursor = conexao.cursor()
 
-          desc_lancamento = (
-              f"Resgate {origem_final}"
-              if not motivo_resgate.strip()
-              else f"Resgate {origem_final} - {motivo_resgate.strip()}"
-          )
-          cursor.execute(
-              "INSERT INTO lancamentos (data, tipo, categoria, descricao,"
-              " valor) VALUES (%s, %s, %s, %s, %s)",
-              (
-                  data_resgate.strip(),
-                  "Receita",
-                  "Resgate",
-                  desc_lancamento,
-                  valor_resgate,
-              ),
-          )
+            cursor.execute(
+                "INSERT INTO desafio_resgates (data, valor, local_origem,"
+                " motivo) VALUES (%s, %s, %s, %s)",
+                (
+                    data_resgate.strip(),
+                    valor_resgate,
+                    origem_final,
+                    motivo_resgate.strip(),
+                ),
+            )
 
-          conexao.commit()
-          cursor.close()
-          conexao.close()
-          st.success("Resgate registrado com sucesso!")
-          st.rerun()
-        except ValueError:
-          st.error("Data inválida. Utilize o formato DD/MM/AAAA.")
-        except Exception as e:
-          st.error(f"Erro ao salvar resgate: {e}")
+            desc_lancamento = (
+                f"Resgate {origem_final}"
+                if not motivo_resgate.strip()
+                else f"Resgate {origem_final} - {motivo_resgate.strip()}"
+            )
+            cursor.execute(
+                "INSERT INTO lancamentos (data, tipo, categoria, descricao,"
+                " valor) VALUES (%s, %s, %s, %s, %s)",
+                (
+                    data_resgate.strip(),
+                    "Receita",
+                    "Resgate",
+                    desc_lancamento,
+                    valor_resgate,
+                ),
+            )
+
+            conexao.commit()
+            cursor.close()
+            conexao.close()
+            st.success("Resgate registrado com sucesso!")
+            st.rerun()
+          except ValueError:
+            st.error("Data inválida. Utilize o formato DD/MM/AAAA.")
+          except Exception as e:
+            st.error(f"Erro ao salvar resgate: {e}")
   else:
     with st.form("form_novo_rendimento"):
       st.info(
-          "💡 **Ajuste de Corretora:** O rendimento somará ao saldo do investimento "
-          "E entrará como Receita (Juros/Rendimento) no seu fluxo de caixa para zerar a diferença da conta."
+          "💡 **Ajuste de Corretora:** O rendimento será lançado como "
+          "Receita (Renda Extra / Juros) no fluxo de caixa para ajustar a diferença da conta, preservando o saldo da aplicação."
       )
       col_rend1, col_rend2, col_rend3 = st.columns(3)
       with col_rend1:
@@ -628,63 +632,49 @@ with aba_resgate:
       with col_rend2:
         valor_rend = st.number_input(
             "Valor da Correção / Juros (R$)",
-            min_value=0.01,
-            value=max(0.01, 0.76),
+            min_value=0.0,
+            value=0.00,
             step=0.10,
             format="%.2f",
         )
       with col_rend3:
+        locais_rendimento = [
+            "Selecione...",
+            "Banco Itaú",
+            "Nomad (Investimentos em Dólar)",
+            "Sofisa Direto (CDB 105% CDI)",
+            "Banco Inter (CDB Liquidez Diária)",
+            "Nubank (Caixinha / RDB 100% CDI)",
+            "Tesouro Selic (Tesouro Direto)",
+        ]
         local_rend = st.selectbox(
             "Instituição",
-            [
-                "Banco Itaú",
-                "Nomad (Investimentos em Dólar)",
-                "Sofisa Direto (CDB 105% CDI)",
-                "Banco Inter (CDB Liquidez Diária)",
-                "Nubank (Caixinha / RDB 100% CDI)",
-                "Tesouro Selic (Tesouro Direto)",
-            ],
+            locais_rendimento,
         )
 
-      if st.form_submit_button("📈 Somar Rendimento e Registrar Receita"):
-        try:
-          datetime.strptime(data_rend.strip(), "%d/%m/%Y")
-          conexao = obter_conexao()
-          cursor = conexao.cursor()
-          
-          # 1. Atualiza o saldo do último aporte existente na instituição selecionada
-          cursor.execute(
-              "SELECT id, valor FROM desafio_aportes WHERE local_aplicacao = %s ORDER BY id DESC LIMIT 1",
-              (local_rend,)
-          )
-          registro_existente = cursor.fetchone()
-          
-          if registro_existente:
-            id_alvo, valor_atual = registro_existente
-            novo_valor_total = float(valor_atual) + float(valor_rend)
-            cursor.execute(
-                "UPDATE desafio_aportes SET valor = %s WHERE id = %s",
-                (novo_valor_total, id_alvo)
-            )
-          else:
-            cursor.execute(
-                "INSERT INTO desafio_aportes (data, valor, local_aplicacao) VALUES (%s, %s, %s)",
-                (data_rend.strip(), valor_rend, local_rend)
-            )
-          
-          # 2. Registra o rendimento como uma Receita no fluxo de caixa (para fechar o saldo do banco em R$ 91,37)
-          cursor.execute(
-              "INSERT INTO lancamentos (data, tipo, categoria, descricao, valor) VALUES (%s, %s, %s, %s, %s)",
-              (data_rend.strip(), "Receita", "Rendimento", f"Rendimento / Juros {local_rend}", float(valor_rend))
-          )
+      if st.form_submit_button("📈 Registrar Apenas como Receita de Rendimento"):
+        if local_rend == "Selecione...":
+          st.error("Por favor, selecione uma instituição válida.")
+        elif valor_rend <= 0:
+          st.error("O valor do rendimento deve ser maior que zero.")
+        else:
+          try:
+            datetime.strptime(data_rend.strip(), "%d/%m/%Y")
+            conexao = obter_conexao()
+            cursor = conexao.cursor()
             
-          conexao.commit()
-          cursor.close()
-          conexao.close()
-          st.success(f"Rendimento de R$ {valor_rend:,.2f} somado ao investimento e lançado como Receita no caixa com sucesso!")
-          st.rerun()
-        except Exception as e:
-          st.error(f"Erro ao aplicar rendimento: {e}")
+            cursor.execute(
+                "INSERT INTO lancamentos (data, tipo, categoria, descricao, valor) VALUES (%s, %s, %s, %s, %s)",
+                (data_rend.strip(), "Receita", "Rendimento", f"Rendimento / Juros {local_rend}", float(valor_rend))
+            )
+              
+            conexao.commit()
+            cursor.close()
+            conexao.close()
+            st.success(f"Rendimento de R$ {valor_rend:,.2f} lançado como Receita no caixa com sucesso!")
+            st.rerun()
+          except Exception as e:
+            st.error(f"Erro ao aplicar rendimento: {e}")
 
   st.divider()
 
@@ -953,7 +943,7 @@ with aba_orientacao:
           "Nomad (Investimentos em Dólar)",
           "Sofisa Direto",
           "Banco Inter",
-          "Tesouro Selic (Tesouro Direto)",
+          "Tesouro Direto",
       ],
       "Produto Recomendado": [
           "CDBs e Fundos DI",
