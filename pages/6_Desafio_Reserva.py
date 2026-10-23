@@ -273,7 +273,7 @@ with aba_desafio:
 
   if total_guardado >= meta_total and meta_total > 0:
     st.success(
-        "🎉 PARABÉNS! Você atingiu ou superou a meta estabelecida para este"
+        "🎉 PARABÉNS! Você atingiu ou superou a meta established para este"
         " desafio!"
     )
     if st.button("🔄 Iniciar Novo Ciclo"):
@@ -463,13 +463,19 @@ with aba_desafio:
 
   st.markdown("### 🏦 Saldo e Distribuição por Banco / Corretora (Líquido)")
   if not df_aportes.empty:
+    df_aportes_clean = df_aportes.copy()
+    # Limpa possíveis sufixos antigos como ' (Rendimento)' para unificar o cálculo por instituição
+    df_aportes_clean["local_aplicacao"] = df_aportes_clean["local_aplicacao"].str.replace(" (Rendimento)", "", regex=False).str.strip()
+
     df_resumo_aportes = (
-        df_aportes.groupby("local_aplicacao")["valor_num"].sum().reset_index()
+        df_aportes_clean.groupby("local_aplicacao")["valor_num"].sum().reset_index()
     )
 
     if not df_resgates.empty:
+      df_resgates_clean = df_resgates.copy()
+      df_resgates_clean["local_origem"] = df_resgates_clean["local_origem"].str.replace(" (Rendimento)", "", regex=False).str.strip()
       df_resumo_resgates = (
-          df_resgates.groupby("local_origem")["valor_num"].sum().reset_index()
+          df_resgates_clean.groupby("local_origem")["valor_num"].sum().reset_index()
       )
       df_resumo_bancos = pd.merge(
           df_resumo_aportes,
@@ -644,7 +650,6 @@ with aba_resgate:
             value=datetime.now().strftime("%d/%m/%Y"),
         )
       with col_rend2:
-        # CORREÇÃO APLICADA AQUI: min_value=0.01 e valor padrão seguro para evitar erros abaixo do limite
         valor_rend = st.number_input(
             "Valor da Correção / Juros (R$)",
             min_value=0.01,
@@ -670,11 +675,11 @@ with aba_resgate:
           datetime.strptime(data_rend.strip(), "%d/%m/%Y")
           conexao = obter_conexao()
           cursor = conexao.cursor()
-          # Registra como aporte de ajuste para somar no saldo da instituição
+          # Registra com o nome DIRETO da instituição (ex: Banco Itaú) para unificar o saldo e abater perfeitamente nos resgates
           cursor.execute(
               "INSERT INTO desafio_aportes (data, valor, local_aplicacao) VALUES"
               " (%s, %s, %s)",
-              (data_rend.strip(), valor_rend, f"{local_rend} (Rendimento)"),
+              (data_rend.strip(), valor_rend, local_rend),
           )
           conexao.commit()
           cursor.close()
