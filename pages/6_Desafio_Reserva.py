@@ -338,7 +338,7 @@ with aba_desafio:
   if not df_aportes.empty:
     ids_disponiveis = df_aportes["id"].tolist()
     id_selecionado = st.selectbox(
-        "Selecione o ID do lançamento que deseja alterar ou excluir:",
+        "Selecione o ID du lançamento que deseja alterar ou excluir:",
         ids_disponiveis,
     )
 
@@ -448,18 +448,13 @@ with aba_desafio:
 
   st.markdown("### 🏦 Saldo e Distribuição por Banco / Corretora (Líquido)")
   if not df_aportes.empty:
-    df_aportes_clean = df_aportes.copy()
-    df_aportes_clean["local_aplicacao"] = df_aportes_clean["local_aplicacao"].str.replace(" (Rendimento)", "", regex=False).str.strip()
-
     df_resumo_aportes = (
-        df_aportes_clean.groupby("local_aplicacao")["valor_num"].sum().reset_index()
+        df_aportes.groupby("local_aplicacao")["valor_num"].sum().reset_index()
     )
 
     if not df_resgates.empty:
-      df_resgates_clean = df_resgates.copy()
-      df_resgates_clean["local_origem"] = df_resgates_clean["local_origem"].str.replace(" (Rendimento)", "", regex=False).str.strip()
       df_resumo_resgates = (
-          df_resgates_clean.groupby("local_origem")["valor_num"].sum().reset_index()
+          df_resgates.groupby("local_origem")["valor_num"].sum().reset_index()
       )
       df_resumo_bancos = pd.merge(
           df_resumo_aportes,
@@ -621,8 +616,8 @@ with aba_resgate:
   else:
     with st.form("form_novo_rendimento"):
       st.info(
-          "💡 **Ajuste de Corretora:** Lançar rendimentos atualiza apenas o"
-          " saldo acumulado da instituição, sem gerar entradas na conta corrente."
+          "💡 **Ajuste de Corretora:** Lançar rendimentos soma diretamente ao"
+          " saldo da instituição selecionada, sem gerar entradas na conta corrente."
       )
       col_rend1, col_rend2, col_rend3 = st.columns(3)
       with col_rend1:
@@ -656,15 +651,16 @@ with aba_resgate:
           datetime.strptime(data_rend.strip(), "%d/%m/%Y")
           conexao = obter_conexao()
           cursor = conexao.cursor()
+          # Insere diretamente na tabela de aportes com o nome limpo para somar ao saldo da instituição
           cursor.execute(
               "INSERT INTO desafio_aportes (data, valor, local_aplicacao) VALUES"
               " (%s, %s, %s)",
-              (data_rend.strip(), valor_rend, f"{local_rend} (Rendimento)"),
+              (data_rend.strip(), valor_rend, local_rend),
           )
           conexao.commit()
           cursor.close()
           conexao.close()
-          st.success("Correção monetária / rendimento aplicado com sucesso!")
+          st.success("Correção monetária / rendimento aplicado e somado ao saldo da instituição com sucesso!")
           st.rerun()
         except Exception as e:
           st.error(f"Erro ao aplicar rendimento: {e}")
