@@ -109,7 +109,6 @@ else:
   df_aportes["valor_num"] = 0.0
 
 # --- TRATAMENTO INTELIGENTE E UNIFICADO DE RESGATES ---
-# Garante a leitura dos resgates do banco e unifica com lançamentos de categoria 'Resgate'
 if not df_resgates.empty and "valor" in df_resgates.columns:
   df_resgates["valor_num"] = pd.to_numeric(
       df_resgates["valor"], errors="coerce"
@@ -140,7 +139,6 @@ def fmt_moeda(valor):
 
 # --- PROCESSAMENTO ROBUSTO DE COMPETÊNCIAS (MM/AAAA) ---
 def extrair_competencia(data_val):
-  """Extrai MM/AAAA e AAAA-MM tratando strings e objetos de data nativos."""
   if pd.isna(data_val) or data_val is None:
     return "Indefinido", "9999-99"
 
@@ -235,21 +233,15 @@ if not df_lancamentos.empty and "valor" in df_lancamentos.columns:
 else:
   df_lancamentos["tipo_clean"] = ""
 
+# Isola os lançamentos comuns do mês (excluindo resgates duplicados no cálculo de receitas comuns)
 df_lanc_mes = (
     df_lancamentos[
-        df_lancamentos["competencia"] == competencia_selecionada
+        (df_lancamentos["competencia"] == competencia_selecionada)
+        & (df_lancamentos["categoria"].str.strip().str.lower() != "resgate")
     ].copy()
     if not df_lancamentos.empty
     else pd.DataFrame()
 )
-
-if not df_lanc_mes.empty and "data" in df_lanc_mes.columns:
-  df_lanc_mes["_temp_dt"] = pd.to_datetime(
-      df_lanc_mes["data"], format="%d/%m/%Y", errors="coerce"
-  )
-  df_lanc_mes = df_lanc_mes.sort_values(by="_temp_dt", ascending=True).drop(
-      columns=["_temp_dt"]
-  )
 
 total_receitas_mes = (
     df_lanc_mes[
@@ -269,9 +261,12 @@ total_gastos_mes = (
     else 0.0
 )
 
-# Aportes e resgates específicos do mês selecionado
+# Aportes e resgates específicos do mês selecionado (Apenas capital real do bolso, ignorando marcadores de Rendimento)
 df_aportes_mes = (
-    df_aportes[df_aportes["competencia"] == competencia_selecionada].copy()
+    df_aportes[
+        (df_aportes["competencia"] == competencia_selecionada)
+        & (~df_aportes["local_aplicacao"].str.contains("Rendimento", case=False, na=False))
+    ].copy()
     if not df_aportes.empty
     else pd.DataFrame()
 )
@@ -288,8 +283,8 @@ total_resgates_mes = (
     df_resgates_mes["valor_num"].sum() if not df_resgates_mes.empty and "valor_num" in df_resgates_mes.columns else 0.0
 )
 
-# O impacto no caixa do mês é apenas o dinheiro que efetivamente saiu para aportes novos
-impacto_investimentos_mes = total_aportes_mes
+# O impacto real no caixa do mês é a saída para aportes novos descontada dos resgates trazidos de volta
+impacto_investimentos_mes = total_aportes_mes - total_resgates_mes
 
 def calcular_saldo_ate_competencia(df_lan, df_ap, df_res, ordem_alvo):
   try:
@@ -317,6 +312,7 @@ def calcular_saldo_ate_competencia(df_lan, df_ap, df_res, ordem_alvo):
       if ord_comp < ordem_alvo:
         rec = df_lan[
             (df_lan["comp_ordem"] == ord_comp)
+            & (df_lan["categoria"].str.strip().str.lower() != "resgate")
             & (
                 df_lan["tipo_clean"].isin(
                     ["receita", "crédito", "credito", "entrada"]
@@ -333,18 +329,24 @@ def calcular_saldo_ate_competencia(df_lan, df_ap, df_res, ordem_alvo):
         ]["valor"].sum()
 
         apo_c = (
-            df_ap[df_ap["comp_ordem"] == ord_comp]["valor_num"].sum()
+            df_ap[
+                (df_ap["comp_ordem"] == ord_comp)
+                & (~df_ap["local_aplicacao"].str.contains("Rendimento", case=False, na=False))
+            ]["valor_num"].sum()
             if not df_ap.empty and "valor_num" in df_ap.columns
             else 0.0
         )
+        res_c = (
+            df_res[df_res["comp_ordem"] == ord_comp]["valor_num"].sum()
+            if not df_res.empty and "valor_num" in df_res.columns
+            else 0.0
+        )
 
-        # O impacto no caixa anterior considera apenas os aportes que saíram do bolso
-        saldo_acumulado += rec - gas - apo_c
+        saldo_acumulado += (rec - gas - (apo_c - res_c))
     return saldo_acumulado
   except Exception:
     return 0.0
 
-# Função para calcular o Patrimônio Guardado Acumulado EXATAMENTE até o mês selecionado
 def calcular_patrimonio_guardado_ate(df_ap, df_res, ordem_alvo):
   try:
     todas_ordens = sorted(
@@ -376,15 +378,9 @@ saldo_remanescente_anterior = calcular_saldo_ate_competencia(
     df_lancamentos, df_aportes, df_resgates, ordem_selecionada
 )
 
-# Patrimônio Guardado Acumulado até o mês selecionado
 patrimonio_guardado_mes = calcular_patrimonio_guardado_ate(
     df_aportes, df_resgates, ordem_selecionada
 )
-
-# Totais históricos globais (para referência no banner)
-total_aportes_geral = df_aportes["valor_num"].sum() if not df_aportes.empty else 0.0
-total_resgates_geral = df_resgates["valor_num"].sum() if not df_resgates.empty else 0.0
-patrimonio_liquido_geral = total_aportes_geral - total_resgates_geral
 
 saldo_mes = (
     saldo_remanescente_anterior
@@ -401,7 +397,6 @@ col1.metric("Saldo Anterior", fmt_moeda(saldo_remanescente_anterior))
 col2.metric("Entradas", fmt_moeda(total_receitas_mes))
 col3.metric("Gastos Comuns", fmt_moeda(total_gastos_mes))
 
-# 4º CARTÃO: Patrimônio Guardado Acumulado até a Competência Selecionada
 col4.metric(
     "Patrimônio Guardado",
     fmt_moeda(patrimonio_guardado_mes),
@@ -420,7 +415,6 @@ else:
       delta_color="inverse",
   )
 
-# Banner descritivo atualizado com o acumulado do mês
 st.info(
     f"💡 **Detalhamento da Reserva ({competencia_selecionada}):** Patrimônio Acumulado no Mês: **{fmt_moeda(patrimonio_guardado_mes)}** | "
     f"Aportes até o Mês: **{fmt_moeda(df_aportes[df_aportes['comp_ordem'] <= ordem_selecionada]['valor_num'].sum() if not df_aportes.empty else 0.0)}** | "
@@ -484,7 +478,6 @@ if not df_gastos_grafico.empty and "valor" in df_gastos_grafico.columns:
 else:
   st.info("Nenhum registro encontrado para gerar gráficos nesta competência.")
 
-# --- SEÇÃO DE LANÇAMENTOS SEPARADOS (CRÉDITOS E DÉBITOS) ---
 st.divider()
 st.subheader(f"📥 Créditos (Entradas) da Competência: {competencia_selecionada}")
 
@@ -521,7 +514,7 @@ df_debitos_mes = (
     df_lanc_mes[
         df_lanc_mes["tipo_clean"].isin(["despesa", "débito", "debito", "saida"])
     ].copy()
-    if not df_lanc_mes.empty
+    if not df_debitos_mes.empty
     else pd.DataFrame()
 )
 
@@ -542,7 +535,6 @@ if not df_debitos_mes.empty:
 else:
   st.info("Nenhum débito registrado nesta competência.")
 
-# --- SEÇÃO DE GESTÃO DE DÍVIDAS ---
 st.divider()
 st.subheader("💳 Gestão e Controle de Dívidas")
 
@@ -558,9 +550,8 @@ if not df_dividas.empty:
     )
   st.dataframe(df_dividas_fmt.set_index("id"), use_container_width=True)
 else:
-  st.info("Nenhuma dívida registada no sistema.")
+  st.info("Nenhuma dívida registrada no sistema.")
 
-# --- SEÇÃO DE BALANCETE COMPARATIVO MÊS A MÊS ---
 st.divider()
 st.subheader("📊 Balancete Comparativo Mensal (Evolução Contábil)")
 
@@ -589,6 +580,7 @@ if todas_ordens:
     rec_c = (
         df_lancamentos[
             (df_lancamentos["comp_ordem"] == ord_comp)
+            & (df_lancamentos["categoria"].str.strip().str.lower() != "resgate")
             & (
                 df_lancamentos["tipo_clean"].isin(
                     ["receita", "crédito", "credito", "entrada"]
@@ -613,7 +605,10 @@ if todas_ordens:
     )
 
     apo_c = (
-        df_aportes[df_aportes["comp_ordem"] == ord_comp]["valor_num"].sum()
+        df_aportes[
+            (df_aportes["comp_ordem"] == ord_comp)
+            & (~df_aportes["local_aplicacao"].str.contains("Rendimento", case=False, na=False))
+        ]["valor_num"].sum()
         if not df_aportes.empty and "valor_num" in df_aportes.columns else 0.0
     )
     res_c = (
@@ -621,11 +616,8 @@ if todas_ordens:
         if not df_resgates.empty and "valor_num" in df_resgates.columns else 0.0
     )
 
-    # Investimento líquido exibido apenas para referência patrimonial na tabela
     investimento_liquido_c = apo_c - res_c
-
-    # O saldo final contábil do mês no balancete considera o aporte como saída de caixa (resgate já entrou em rec_c)
-    saldo_final_c = acum_saldo_loop + rec_c - gas_c - apo_c
+    saldo_final_c = acum_saldo_loop + rec_c - gas_c - investimento_liquido_c
 
     dados_balancete.append({
         "Competência": comp_formatada,
