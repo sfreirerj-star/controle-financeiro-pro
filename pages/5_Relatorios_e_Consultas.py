@@ -125,7 +125,7 @@ try:
 except Exception:
   competencia_selecionada = datetime.now().strftime("%m/%Y")
 
-# Carregar todos os lançamentos do banco
+# Carregar dados do banco de dados
 try:
   conexao = obter_conexao()
   df_lancamentos = pd.read_sql_query(
@@ -133,10 +133,22 @@ try:
       " ORDER BY id DESC",
       conexao,
   )
+  try:
+    df_aportes = pd.read_sql_query("SELECT * FROM desafio_aportes", conexao)
+  except Exception:
+    df_aportes = pd.DataFrame()
+
+  try:
+    df_resgates = pd.read_sql_query("SELECT * FROM desafio_resgates", conexao)
+  except Exception:
+    df_resgates = pd.DataFrame()
+
   conexao.close()
 except Exception as e:
-  st.error(f"Erro ao carregar lançamentos: {e}")
+  st.error(f"Erro ao carregar dados do banco: {e}")
   df_lancamentos = pd.DataFrame()
+  df_aportes = pd.DataFrame()
+  df_resgates = pd.DataFrame()
 
 
 def fmt_moeda(v):
@@ -392,57 +404,91 @@ if not df_lancamentos.empty:
           "Nenhum registro disponível para gerenciar com os filtros atuais."
       )
 
-  # --- ABA 2: FECHAMENTO DE MÊS ---
+  # --- ABA 2: FECHAMENTO DE MÊS CORRIGIDO ---
   with aba2:
     st.markdown("### 📅 Fechamento Mensal e Evolução de Saldo")
     st.write(
         "Visão consolidada de entradas, saídas, resultado líquido do mês e o"
-        " saldo remanescente acumulado."
+        " saldo remanescente acumulado (descontados os aportes em investimentos)."
     )
 
-    df_lancamentos["ano_mes"] = df_lancamentos["data_dt"].dt.to_period("M")
+    df_lancamentos["comp_ordem"] = df_lancamentos["data"].apply(lambda x: extrair_competencia(x)[1])
+    df_lancamentos["competencia"] = df_lancamentos["data"].apply(lambda x: extrair_competencia(x)[0])
 
-    if df_lancamentos["ano_mes"].notna().any():
-      df_receitas = (
-          df_lancamentos[df_lancamentos["tipo"] == "Receita"]
-          .groupby("ano_mes")["valor"]
-          .sum()
-          .reset_index(name="entradas")
-      )
-      df_despesas = (
-          df_lancamentos[df_lancamentos["tipo"] == "Despesa"]
-          .groupby("ano_mes")["valor"]
-          .sum()
-          .reset_index(name="saidas")
-      )
+    if not df_aportes.empty and "data" in df_aportes.columns:
+      df_aportes["comp_ordem"] = df_aportes["data"].apply(lambda x: extrair_competencia(x)[1])
+      df_aportes["valor_num"] = pd.to_numeric(df_aportes["valor"], errors="coerce").fillna(0.0)
+    else:
+      df_aportes["comp_ordem"] = "9999-99"
+      df_aportes["valor_num"] = 0.0
 
-      df_fechamento = pd.merge(
-          df_receitas, df_despesas, on="ano_mes", how="outer"
-      ).fillna(0.0)
-      df_fechamento = df_fechamento.sort_values(
-          by="ano_mes", ascending=True
-      ).reset_index(drop=True)
+    if not df_resgates.empty and "data" in df_resgates.columns:
+      df_resgates["comp_ordem"] = df_resgates["data"].apply(lambda x: extrair_competencia(x)[1])
+      df_resgates["valor_num"] = pd.to_numeric(df_resgates["valor"], errors="coerce").fillna(0.0)
+    else:
+      df_resgates["comp_ordem"] = "9999-99"
+      df_resgates["valor_num"] = 0.0
 
-      df_fechamento["resultado_mes"] = (
-          df_fechamento["entradas"] - df_fechamento["saidas"]
-      )
-      df_fechamento["saldo_remanescente"] = df_fechamento[
-          "resultado_mes"
-      ].cumsum()
-      df_fechamento["mes_ano_str"] = df_fechamento["ano_mes"].dt.strftime(
-          "%m/%Y"
-      )
+    todas_ordens = sorted(
+        list(
+            set(
+                df_lancamentos[df_lancamentos["comp_ordem"] != "9999-99"]["comp_ordem"].unique().tolist()
+                + df_aportes[df_aportes["comp_ordem"] != "9999-99"]["comp_ordem"].unique().tolist()
+                + df_resgates[df_resgates["comp_ordem"] != "9999-99"]["comp_ordem"].unique().tolist()
+            )
+        )
+    )
 
-      df_tabela_mensal = pd.DataFrame({
-          "Mês/Ano": df_fechamento["mes_ano_str"],
-          "Total Entradas": df_fechamento["entradas"].apply(fmt_moeda),
-          "Total Saídas": df_fechamento["saidas"].apply(fmt_moeda),
-          "Resultado do Mês": df_fechamento["resultado_mes"].apply(fmt_moeda),
-          "Saldo Remanescente (Acumulado)": df_fechamento[
-              "saldo_remanescente"
-          ].apply(fmt_moeda),
-      })
+    if todas_ordens:
+      dados_fechamento = []
+      saldo_acumulado_loop = 0.0
 
+      for ord_comp in todas_ordens:
+        ano, mes = ord_comp.split("-")
+        comp_formatada = f"{mes}/{ano}"
+
+        df_lan_ord = df_lancamentos[
+            (df_lancamentos["comp_ordem"] == ord_comp)
+            & (df_lancamentos["categoria"].str.strip().str.lower() != "resgate")
+        ]
+
+        rec_c = df_lan_ord[
+            df_lan_ord["tipo"].str.strip().str.lower().isin(["receita", "crédito", "credito", "entrada"])
+        ]["valor"].astype(float).sum() if not df_lan_ord.empty else 0.0
+
+        gas_c = df_lan_ord[
+            df_lan_ord["tipo"].str.strip().str.lower().isin(["despesa", "débito", "debito", "saida"])
+        ]["valor"].astype(float).sum() if not df_lan_ord.empty else 0.0
+
+        apo_c = (
+            df_aportes[
+                (df_aportes["comp_ordem"] == ord_comp)
+                & (~df_aportes["local_aplicacao"].str.contains("Rendimento", case=False, na=False))
+            ]["valor_num"].sum()
+            if not df_aportes.empty and "valor_num" in df_aportes.columns
+            else 0.0
+        )
+
+        res_c = (
+            df_resgates[df_resgates["comp_ordem"] == ord_comp]["valor_num"].sum()
+            if not df_resgates.empty and "valor_num" in df_resgates.columns
+            else 0.0
+        )
+
+        # O impacto no caixa considera as entradas, menos as saídas de despesas, menos os aportes líquidos
+        resultado_mes = rec_c - gas_c - (apo_c - res_c)
+        saldo_acumulado_loop += resultado_mes
+
+        dados_fechamento.append({
+            "Mês/Ano": comp_formatada,
+            "Total Entradas": fmt_moeda(rec_c),
+            "Total Saídas": fmt_moeda(gas_c),
+            "Invest. Líquido": fmt_moeda(apo_c - res_c),
+            "Resultado do Mês": fmt_moeda(resultado_mes),
+            "Saldo Remanescente (Acumulado)": fmt_moeda(saldo_acumulado_loop),
+        })
+
+      df_tabela_mensal = pd.DataFrame(dados_fechamento)
       st.dataframe(df_tabela_mensal, use_container_width=True, height=210)
     else:
       st.warning(
@@ -457,44 +503,18 @@ if not df_lancamentos.empty:
         " entradas e saídas ou defina valores personalizados."
     )
 
-    df_lancamentos["ano_mes"] = df_lancamentos["data_dt"].dt.to_period("M")
+    if not df_lancamentos.empty and todas_ordens:
+      # Pega o saldo acumulado atual real da última competência
+      saldo_atual_base = saldo_acumulado_loop
 
-    if not df_lancamentos.empty and df_lancamentos["ano_mes"].notna().any():
-      df_rec_m = (
-          df_lancamentos[df_lancamentos["tipo"] == "Receita"]
-          .groupby("ano_mes")["valor"]
-          .sum()
-      )
-      df_desp_m = (
-          df_lancamentos[df_lancamentos["tipo"] == "Despesa"]
-          .groupby("ano_mes")["valor"]
-          .sum()
-      )
+      # Média de entradas e saídas operacionais
+      media_entradas_hist = df_lancamentos[
+          df_lancamentos["tipo"].str.strip().str.lower().isin(["receita", "crédito", "credito", "entrada"])
+      ]["valor"].astype(float).mean() if not df_lancamentos.empty else 0.0
 
-      media_entradas_hist = df_rec_m.mean() if not df_rec_m.empty else 0.0
-      media_saidas_hist = df_desp_m.mean() if not df_desp_m.empty else 0.0
-
-      df_receitas_tot = (
-          df_lancamentos[df_lancamentos["tipo"] == "Receita"]
-          .groupby("ano_mes")["valor"]
-          .sum()
-          .reset_index(name="entradas")
-      )
-      df_despesas_tot = (
-          df_lancamentos[df_lancamentos["tipo"] == "Despesa"]
-          .groupby("ano_mes")["valor"]
-          .sum()
-          .reset_index(name="saidas")
-      )
-      df_fech_tot = pd.merge(
-          df_receitas_tot, df_despesas_tot, on="ano_mes", how="outer"
-      ).fillna(0.0)
-      df_fech_tot["resultado"] = (
-          df_fech_tot["entradas"] - df_fech_tot["saidas"]
-      )
-      saldo_atual_base = (
-          df_fech_tot["resultado"].sum() if not df_fech_tot.empty else 0.0
-      )
+      media_saidas_hist = df_lancamentos[
+          df_lancamentos["tipo"].str.strip().str.lower().isin(["despesa", "débito", "debito", "saida"])
+      ]["valor"].astype(float).mean() if not df_lancamentos.empty else 0.0
 
       col_p1, col_p2, col_p3 = st.columns(3)
       with col_p1:

@@ -164,8 +164,12 @@ for df_item in [df_lancamentos, df_aportes, df_resgates]:
     df_item["competencia"] = [x[0] for x in res]
     df_item["comp_ordem"] = [x[1] for x in res]
 
+# Isola os lançamentos comuns do mês (excluindo resgates duplicados no cálculo de receitas comuns)
 df_lanc_mes = (
-    df_lancamentos[df_lancamentos["competencia"] == competencia_selecionada].copy()
+    df_lancamentos[
+        (df_lancamentos["competencia"] == competencia_selecionada)
+        & (df_lancamentos["categoria"].str.strip().str.lower() != "resgate")
+    ].copy()
     if not df_lancamentos.empty
     else pd.DataFrame()
 )
@@ -186,6 +190,30 @@ total_despesas = (
     else 0.0
 )
 
+# Aportes e resgates específicos do mês (excluindo rendimentos)
+df_aportes_mes = (
+    df_aportes[
+        (df_aportes["competencia"] == competencia_selecionada)
+        & (~df_aportes["local_aplicacao"].str.contains("Rendimento", case=False, na=False))
+    ].copy()
+    if not df_aportes.empty
+    else pd.DataFrame()
+)
+total_aportes_mes = (
+    df_aportes_mes["valor_num"].sum() if not df_aportes_mes.empty and "valor_num" in df_aportes_mes.columns else 0.0
+)
+
+df_resgates_mes = (
+    df_resgates[df_resgates["competencia"] == competencia_selecionada].copy()
+    if not df_resgates.empty and "competencia" in df_resgates.columns
+    else pd.DataFrame()
+)
+total_resgates_mes = (
+    df_resgates_mes["valor_num"].sum() if not df_resgates_mes.empty and "valor_num" in df_resgates_mes.columns else 0.0
+)
+
+impacto_investimentos_mes = total_aportes_mes - total_resgates_mes
+
 def calcular_saldo_ate_competencia(df_lan, df_ap, df_res, ordem_alvo):
   try:
     todas_ordens = sorted(
@@ -202,6 +230,7 @@ def calcular_saldo_ate_competencia(df_lan, df_ap, df_res, ordem_alvo):
       if ord_comp < ordem_alvo:
         rec = df_lan[
             (df_lan["comp_ordem"] == ord_comp)
+            & (df_lan["categoria"].str.strip().str.lower() != "resgate")
             & (df_lan["tipo_clean"].isin(["receita", "crédito", "credito", "entrada"]))
         ]["valor"].sum()
         gas = df_lan[
@@ -209,11 +238,19 @@ def calcular_saldo_ate_competencia(df_lan, df_ap, df_res, ordem_alvo):
             & (df_lan["tipo_clean"].isin(["despesa", "débito", "debito", "saida"]))
         ]["valor"].sum()
         apo_c = (
-            df_ap[df_ap["comp_ordem"] == ord_comp]["valor_num"].sum()
+            df_ap[
+                (df_ap["comp_ordem"] == ord_comp)
+                & (~df_ap["local_aplicacao"].str.contains("Rendimento", case=False, na=False))
+            ]["valor_num"].sum()
             if not df_ap.empty and "valor_num" in df_ap.columns
             else 0.0
         )
-        saldo_acumulado += rec - gas - apo_c
+        res_c = (
+            df_res[df_res["comp_ordem"] == ord_comp]["valor_num"].sum()
+            if not df_res.empty and "valor_num" in df_res.columns
+            else 0.0
+        )
+        saldo_acumulado += (rec - gas - (apo_c - res_c))
     return saldo_acumulado
   except Exception:
     return 0.0
@@ -222,8 +259,8 @@ saldo_anterior = calcular_saldo_ate_competencia(
     df_lancamentos, df_aportes, df_resgates, ordem_selecionada
 )
 
-# Saldo Livre do caixa acumulado (sem duplicar dívidas ou aportes)
-saldo_livre = saldo_anterior + total_receitas - total_despesas
+# Saldo Livre / Resultado Final da Conta Corrente do Mês
+saldo_livre = saldo_anterior + total_receitas - total_despesas - impacto_investimentos_mes
 
 def fmt_moeda(v):
   return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
