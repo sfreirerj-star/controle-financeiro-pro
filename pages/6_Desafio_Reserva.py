@@ -58,7 +58,7 @@ def garantir_tabelas_e_sincronizacao():
         """)
     conexao.commit()
 
-    # 2. Sincronização Inteligente Bidirecional (Garante que resgates e aportes reflitam em lancamentos sem duplicar)
+    # 2. Sincronização Inteligente de Resgates (Apenas Resgates entram no caixa como Receita)
     df_r = pd.read_sql_query(
         "SELECT id, data, valor, local_origem, motivo FROM desafio_resgates",
         conexao,
@@ -273,7 +273,7 @@ with aba_desafio:
 
   if total_guardado >= meta_total and meta_total > 0:
     st.success(
-        "🎉 PARABÉNS! Você atingiu ou superou a meta established para este"
+        "🎉 PARABÉNS! Você atingiu ou superou a meta estabelecida para este"
         " desafio!"
     )
     if st.button("🔄 Iniciar Novo Ciclo"):
@@ -331,15 +331,24 @@ with aba_desafio:
         datetime.strptime(data_aporte.strip(), "%d/%m/%Y")
         conexao = obter_conexao()
         cursor = conexao.cursor()
+        
+        # 1. Salva o aporte na tabela do desafio de investimentos
         cursor.execute(
             "INSERT INTO desafio_aportes (data, valor, local_aplicacao) VALUES"
             " (%s, %s, %s)",
             (data_aporte.strip(), valor_aporte, local_aporte),
         )
+        
+        # 2. Espelha automaticamente na conta corrente como débito (Aporte) para abater do saldo disponível
+        cursor.execute(
+            "INSERT INTO lancamentos (data, tipo, categoria, descricao, valor) VALUES (%s, %s, %s, %s, %s)",
+            (data_aporte.strip(), "Aporte", "Investimento", f"Aporte {local_aporte}", valor_aporte)
+        )
+
         conexao.commit()
         cursor.close()
         conexao.close()
-        st.success("Aporte registrado com sucesso!")
+        st.success("Aporte registrado com sucesso e abatido da conta corrente!")
         st.rerun()
       except ValueError:
         st.error("Data inválida. Utilize o formato DD/MM/AAAA.")
@@ -464,7 +473,6 @@ with aba_desafio:
   st.markdown("### 🏦 Saldo e Distribuição por Banco / Corretora (Líquido)")
   if not df_aportes.empty:
     df_aportes_clean = df_aportes.copy()
-    # Limpa possíveis sufixos antigos como ' (Rendimento)' para unificar o cálculo por instituição
     df_aportes_clean["local_aplicacao"] = df_aportes_clean["local_aplicacao"].str.replace(" (Rendimento)", "", regex=False).str.strip()
 
     df_resumo_aportes = (
@@ -639,9 +647,8 @@ with aba_resgate:
   else:
     with st.form("form_novo_rendimento"):
       st.info(
-          "💡 **Ajuste de Corretora:** Lançar rendimentos aumenta o total"
-          " aportado/acumulado proporcionalmente, permitindo corrigir pequenas"
-          " variações de juros."
+          "💡 **Ajuste de Corretora:** Lançar rendimentos atualiza apenas o"
+          " saldo acumulado da instituição, sem gerar entradas na conta corrente."
       )
       col_rend1, col_rend2, col_rend3 = st.columns(3)
       with col_rend1:
@@ -675,7 +682,7 @@ with aba_resgate:
           datetime.strptime(data_rend.strip(), "%d/%m/%Y")
           conexao = obter_conexao()
           cursor = conexao.cursor()
-          # Registra com o nome DIRETO da instituição (ex: Banco Itaú) para unificar o saldo e abater perfeitamente nos resgates
+          # Registra estritamente como aporte na tabela de investimentos (sem mexer na conta corrente)
           cursor.execute(
               "INSERT INTO desafio_aportes (data, valor, local_aplicacao) VALUES"
               " (%s, %s, %s)",
@@ -974,7 +981,7 @@ with aba_orientacao:
           "Diversificação cambial geográfica",
           "Excelente taxa para pós-fixado com FGC",
           "Praticidade e solidez de banco múltiplo",
-          "Segurança soberana máxima do governo",
+          "Tesouro Selic com liquidez e segurança soberana",
       ],
   }
   st.dataframe(

@@ -2,12 +2,10 @@ from datetime import datetime
 import pandas as pd
 import psycopg2
 import streamlit as st
-from utils import aplicar_estilo_moderno
 
 st.set_page_config(
-    page_title="Novo Lançamento - Marcelo", page_icon="📝", layout="wide"
+    page_title="Novo Lançamento", page_icon="📝", layout="wide"
 )
-aplicar_estilo_moderno()
 
 
 def obter_conexao():
@@ -135,16 +133,14 @@ try:
 except Exception:
   competencia_selecionada = datetime.now().strftime("%m/%Y")
 
-st.title("💰 Controle Financeiro — Painel do Marcelo")
+st.title("💰 Controle Financeiro")
 st.subheader("📝 Novo Lançamento & Registro de Caixa")
 st.write(
-    "Registre as suas receitas e despesas do dia a dia com abatimento automático"
-    " dos aportes e integração dos resgates de investimentos."
+    "Registre suas receitas, despesas e aportes de investimentos com abatimento automático do saldo da conta corrente."
 )
 
 with st.form("form_novo_lancamento", clear_on_submit=True):
   col1, col2, col3 = st.columns(3)
-
   with col1:
     data_lancamento = st.text_input(
         "Data do Lançamento (DD/MM/AAAA)",
@@ -159,24 +155,21 @@ with st.form("form_novo_lancamento", clear_on_submit=True):
             "Aporte (investimento)",
         ],
     )
-
   with col2:
     categoria = st.text_input(
-        "Categoria (Ex: Alimentação, Transporte...)", value=""
+        "Categoria (Ex: Alimentação, Investimentos, Transporte...)", value=""
     )
     valor = st.number_input(
         "Valor (R$)", min_value=0.0, value=0.0, step=10.0, format="%.2f"
     )
-
   with col3:
-    descricao = st.text_input("Descrição / Estabelecimento", value="")
+    descricao = st.text_input("Descrição / Estabelecimento / Banco", value="")
 
   submitted = st.form_submit_button("Salvar Lançamento")
   if submitted:
     if tipo_selecionado == "-- Selecione o Tipo --":
-      st.error("⚠️ Atenção: Você precisa selecionar o Tipo (Receita, Despesa ou Aporte) antes de salvar!")
+      st.error("⚠️ Atenção: Selecione o Tipo antes de salvar!")
     else:
-      # Mapeia para o formato limpo gravado no banco de dados
       if "Receita" in tipo_selecionado:
         tipo_banco = "Receita"
       elif "Despesa" in tipo_selecionado:
@@ -188,15 +181,32 @@ with st.form("form_novo_lancamento", clear_on_submit=True):
         datetime.strptime(data_lancamento.strip(), "%d/%m/%Y")
         conexao = obter_conexao()
         cursor = conexao.cursor()
+        
+        # Salva o lançamento de caixa
         cursor.execute(
             "INSERT INTO lancamentos (data, tipo, categoria, descricao, valor)"
             " VALUES (%s, %s, %s, %s, %s)",
-            (data_lancamento.strip(), tipo_banco, categoria, descricao, valor),
+            (
+                data_lancamento.strip(),
+                tipo_banco,
+                categoria if categoria.strip() else ("Investimento" if tipo_banco == "Aporte" else "Geral"),
+                descricao,
+                valor,
+            ),
         )
+        
+        # Se for um Aporte manual lançado por esta tela, também espelha no Desafio Reserva
+        if tipo_banco == "Aporte":
+          banco_destino = descricao.strip() if descricao.strip() else "Banco / Corretora Geral"
+          cursor.execute(
+              "INSERT INTO desafio_aportes (data, valor, local_aplicacao) VALUES (%s, %s, %s)",
+              (data_lancamento.strip(), valor, banco_destino),
+          )
+
         conexao.commit()
         cursor.close()
         conexao.close()
-        st.success("Lançamento salvo com sucesso!")
+        st.success("Lançamento guardado com sucesso!")
         st.rerun()
       except ValueError:
         st.error("Data inválida. Utilize o formato DD/MM/AAAA.")
@@ -205,27 +215,16 @@ with st.form("form_novo_lancamento", clear_on_submit=True):
 
 st.divider()
 
+# --- CARREGAMENTO E CÁLCULO DOS SALDOS DA COMPETÊNCIA ---
 df_lancamentos = pd.DataFrame(
     columns=["id", "data", "tipo", "categoria", "descricao", "valor"]
 )
-df_aportes = pd.DataFrame(columns=["id", "data", "valor", "local_aplicacao"])
 
 try:
   conexao = obter_conexao()
-  try:
-    df_lancamentos = pd.read_sql_query(
-        "SELECT * FROM lancamentos ORDER BY id DESC", conexao
-    )
-  except Exception:
-    conexao.rollback()
-
-  try:
-    df_aportes = pd.read_sql_query(
-        "SELECT id, data, valor, local_aplicacao FROM desafio_aportes", conexao
-    )
-  except Exception:
-    conexao.rollback()
-
+  df_lancamentos = pd.read_sql_query(
+      "SELECT * FROM lancamentos ORDER BY id DESC", conexao
+  )
   conexao.close()
 except Exception as e:
   st.error(f"Erro ao carregar dados do banco: {e}")
@@ -243,22 +242,6 @@ else:
   df_lancamentos["comp_ordem"] = "9999-99"
   df_lancamentos["tipo_clean"] = ""
 
-if not df_aportes.empty and "data" in df_aportes.columns:
-  res_ap = df_aportes["data"].apply(extrair_competencia)
-  df_aportes["competencia"] = [x[0] for x in res_ap]
-  df_aportes["comp_ordem"] = [x[1] for x in res_ap]
-  df_aportes["valor_num"] = pd.to_numeric(
-      df_aportes["valor"], errors="coerce"
-  ).fillna(0.0)
-  df_aportes_mes = df_aportes[
-      df_aportes["competencia"] == competencia_selecionada
-  ]
-  total_aportes_mes = (
-      df_aportes_mes["valor_num"].sum() if not df_aportes_mes.empty else 0.0
-  )
-else:
-  total_aportes_mes = 0.0
-
 if not df_lancamentos.empty:
   df_lanc_mes = df_lancamentos[
       df_lancamentos["competencia"] == competencia_selecionada
@@ -266,16 +249,16 @@ if not df_lancamentos.empty:
 else:
   df_lanc_mes = pd.DataFrame(columns=df_lancamentos.columns)
 
+# 1. Total Entradas (Receitas / Créditos)
 total_receitas = (
     df_lanc_mes[
-        df_lanc_mes["tipo_clean"].isin(
-            ["receita", "crédito", "credito", "entrada"]
-        )
+        df_lanc_mes["tipo_clean"].isin(["receita", "crédito", "credito", "entrada"])
     ]["valor_num"].sum()
     if not df_lanc_mes.empty
     else 0.0
 )
 
+# 2. Total Saídas / Despesas do dia a dia
 total_gastos = (
     df_lanc_mes[
         df_lanc_mes["tipo_clean"].isin(["despesa", "débito", "debito", "saida"])
@@ -284,24 +267,17 @@ total_gastos = (
     else 0.0
 )
 
-# Considera também aportes lançados diretamente na tabela de lançamentos se houver
-total_aportes_lanc = (
+# 3. Total em Aportes (Investimentos)
+total_aportes_mes = (
     df_lanc_mes[
         df_lanc_mes["tipo_clean"].isin(["aporte", "investimento"])
     ]["valor_num"].sum()
     if not df_lanc_mes.empty
     else 0.0
 )
-total_aportes_total = total_aportes_mes + total_aportes_lanc
 
-saldo_anterior = 0.0
-try:
-  if competencia_selecionada == "10/2026":
-    saldo_anterior = 97.87
-except Exception:
-  saldo_anterior = 0.0
-
-saldo_atual = saldo_anterior + total_receitas - total_gastos - total_aportes_total
+# Saldo do Caixa = Entradas - Despesas Comuns - Aportes de Investimentos
+saldo_atual = total_receitas - total_gastos - total_aportes_mes
 
 
 def fmt_moeda(v):
@@ -309,21 +285,20 @@ def fmt_moeda(v):
 
 
 st.subheader(
-    f"📊 Resumo da Competência: {competencia_selecionada} (Créditos, Débitos e"
-    " Aportes)"
+    f"📊 Resumo da Competência: {competencia_selecionada}"
 )
 c1, c2, c3, c4 = st.columns(4)
-c1.metric("Total Créditos", fmt_moeda(total_receitas))
-c2.metric("Total Débitos", fmt_moeda(total_gastos))
-c3.metric("Total em Aportes (Mês)", fmt_moeda(total_aportes_total))
+c1.metric("Total Créditos (Receitas)", fmt_moeda(total_receitas))
+c2.metric("Total Débitos (Despesas)", fmt_moeda(total_gastos))
+c3.metric("Total Aportado (Investimentos)", fmt_moeda(total_aportes_mes))
 
 if saldo_atual >= 0:
   c4.metric(
-      "Saldo da Competência", fmt_moeda(saldo_atual), delta="No Azul 💙"
+      "Saldo da Conta Corrente", fmt_moeda(saldo_atual), delta="No Azul 💙"
   )
 else:
   c4.metric(
-      "Saldo da Competência",
+      "Saldo da Conta Corrente",
       fmt_moeda(saldo_atual),
       delta="No Vermelho 🔴",
       delta_color="inverse",
