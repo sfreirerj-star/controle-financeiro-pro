@@ -245,18 +245,21 @@ else:
   df_lancamentos["comp_ordem"] = "9999-99"
   df_lancamentos["tipo_clean"] = ""
 
-if not df_aportes.empty and "data" in df_aportes.columns:
-  res_ap = df_aportes["data"].apply(extrair_competencia)
-  df_aportes["competencia"] = [x[0] for x in res_ap]
-  df_aportes["comp_ordem"] = [x[1] for x in res_ap]
-  df_aportes["valor_num"] = pd.to_numeric(
-      df_aportes["valor"], errors="coerce"
+# Processamento de Aportes da Reserva (Exclui correções/rendimentos do cálculo de caixa)
+if not df_aportes.empty and 'data' in df_aportes.columns:
+  res_ap = df_aportes['data'].apply(extrair_competencia)
+  df_aportes['competencia'] = [x[0] for x in res_ap]
+  df_aportes['valor_num'] = pd.to_numeric(
+      df_aportes['valor'], errors='coerce'
   ).fillna(0.0)
+
+  # Filtra apenas aportes reais de capital, descartando rendimentos do abatimento de caixa
   df_aportes_mes = df_aportes[
-      df_aportes["competencia"] == competencia_selecionada
+      (df_aportes['competencia'] == competencia_selecionada)
+      & (~df_aportes['local_aplicacao'].str.contains('Rendimento', case=False, na=False))
   ]
   total_aportes_mes = (
-      df_aportes_mes["valor_num"].sum() if not df_aportes_mes.empty else 0.0
+      df_aportes_mes['valor_num'].sum() if not df_aportes_mes.empty else 0.0
   )
 else:
   total_aportes_mes = 0.0
