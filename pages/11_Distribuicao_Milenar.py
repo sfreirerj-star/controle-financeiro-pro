@@ -9,10 +9,120 @@ st.set_page_config(
 )
 aplicar_estilo_moderno()  # <-- Mantém o menu opaco e padronizado
 
+
+def obter_conexao():
+  """Abre e retorna a conexão com o banco de dados PostgreSQL na nuvem."""
+  return psycopg2.connect(st.secrets["DATABASE_URL"])
+
+
+def extrair_competencia(data_val):
+  if pd.isna(data_val) or data_val is None:
+    return "Indefinido", "9999-99"
+  try:
+    if isinstance(data_val, (pd.Timestamp, datetime)):
+      return data_val.strftime("%m/%Y"), data_val.strftime("%Y-%m")
+    data_str = str(data_val).strip()
+    dt = pd.to_datetime(data_str, format="%d/%m/%Y", errors="coerce")
+    if pd.isna(dt):
+      dt = pd.to_datetime(data_str, errors="coerce")
+    if pd.notna(dt):
+      return dt.strftime("%m/%Y"), dt.strftime("%Y-%m")
+  except Exception:
+    pass
+  return "Indefinido", "9999-99"
+
+
+def configurar_sidebar_competencia(conexao, prefixo_key="milenar"):
+  mes_atual_sistema = datetime.now().strftime("%m/%Y")
+  competencias_disponiveis = [mes_atual_sistema]
+  mapeamento_comps = pd.DataFrame(
+      {
+          "competencia": [mes_atual_sistema],
+          "comp_ordem": [datetime.now().strftime("%Y-%m")],
+      }
+  )
+
+  try:
+    df_l = pd.read_sql_query("SELECT data FROM lancamentos", conexao)
+  except Exception:
+    df_l = pd.DataFrame(columns=["data"])
+
+  try:
+    df_a = pd.read_sql_query("SELECT data FROM desafio_aportes", conexao)
+  except Exception:
+    df_a = pd.DataFrame(columns=["data"])
+
+  for df in [df_l, df_a]:
+    if not df.empty and "data" in df.columns:
+      res = df["data"].apply(extrair_competencia)
+      df["competencia"] = [x[0] for x in res]
+      df["comp_ordem"] = [x[1] for x in res]
+
+  if not df_l.empty or not df_a.empty:
+    mapeamento_comps = pd.concat([
+        df_l[["competencia", "comp_ordem"]]
+        if not df_l.empty
+        else pd.DataFrame(columns=["competencia", "comp_ordem"]),
+        df_a[["competencia", "comp_ordem"]]
+        if not df_a.empty
+        else pd.DataFrame(columns=["competencia", "comp_ordem"]),
+    ]).drop_duplicates()
+
+    mapeamento_comps = mapeamento_comps[
+        mapeamento_comps["competencia"] != "Indefinido"
+    ].sort_values("comp_ordem", ascending=False)
+
+    if not mapeamento_comps.empty:
+      competencias_disponiveis = mapeamento_comps["competencia"].tolist()
+
+  if mes_atual_sistema not in competencias_disponiveis:
+    competencias_disponiveis.insert(0, mes_atual_sistema)
+
+  key_selectbox = f"selectbox_competencia_{prefixo_key}"
+  if key_selectbox not in st.session_state:
+    st.session_state[key_selectbox] = mes_atual_sistema
+
+  try:
+    index_atual = competencias_disponiveis.index(st.session_state[key_selectbox])
+  except ValueError:
+    index_atual = 0
+
+  st.sidebar.markdown("---")
+  st.sidebar.header("📅 Competência (Mês/Ano)")
+  competencia_selecionada = st.sidebar.selectbox(
+      "Selecione o Mês de Referência",
+      options=competencias_disponiveis,
+      index=index_atual,
+      key=key_selectbox,
+  )
+
+  ordem_sel = (
+      mapeamento_comps[
+          mapeamento_comps["competencia"] == competencia_selecionada
+      ]["comp_ordem"].values[0]
+      if not mapeamento_comps.empty
+      and competencia_selecionada in mapeamento_comps["competencia"].values
+      else datetime.now().strftime("%Y-%m")
+  )
+
+  return competencia_selecionada, ordem_sel
+
+
+# Carregando a competência selecionada na sidebar
+try:
+  conn_temp = obter_conexao()
+  competencia_alvo, ordem_alvo = configurar_sidebar_competencia(
+      conn_temp, prefixo_key="milenar"
+  )
+  conn_temp.close()
+except Exception:
+  competencia_alvo = datetime.now().strftime("%m/%Y")
+
+
 st.title("📜 Estratégia de Alocação Milenar (Talmude)")
 st.markdown(
     "Aplicação prática dos conceitos de **Tsedacá** e da **Regra dos Três"
-    " Terços** usando seus dados reais na nuvem."
+    f" Terços** usando seus dados reais na nuvem (Competência: **{competencia_alvo}**)."
 )
 
 # --- SEÇÃO EDUCATIVA E CONCEITUAL ---
@@ -52,14 +162,8 @@ with st.expander(
 st.divider()
 
 
-# --- FUNÇÕES AUTOSSUFICIENTES (CONEXÃO E CONSULTA AO POSTGRESQL) ---
-def obter_conexao():
-  """Abre e retorna a conexão com o banco de dados PostgreSQL na nuvem."""
-  return psycopg2.connect(st.secrets["DATABASE_URL"])
-
-
-def buscar_dados_competencia(competencia="10/2026"):
-  """Busca e processa os dados reais de lançamentos diretamente do banco PostgreSQL."""
+# --- CONSULTA AO POSTGRESQL PARA A COMPETÊNCIA SELECIONADA ---
+def buscar_dados_competencia(competencia):
   entradas = 0.0
   gastos_comuns = 0.0
 
@@ -69,19 +173,8 @@ def buscar_dados_competencia(competencia="10/2026"):
     conn.close()
 
     if not df_l.empty and "data" in df_l.columns:
-
-      def extrair_comp(data_str):
-        try:
-          dt = pd.to_datetime(data_str, format="%d/%m/%Y", errors="coerce")
-          if pd.isna(dt):
-            dt = pd.to_datetime(data_str, errors="coerce")
-          if pd.notna(dt):
-            return dt.strftime("%m/%Y")
-        except Exception:
-          pass
-        return "Indefinido"
-
-      df_l["competencia"] = df_l["data"].apply(extrair_comp)
+      res_comp = df_l["data"].apply(extrair_competencia)
+      df_l["competencia"] = [x[0] for x in res_comp]
       df_l["valor_num"] = pd.to_numeric(
           df_l["valor"], errors="coerce"
       ).fillna(0.0)
@@ -103,15 +196,10 @@ def buscar_dados_competencia(competencia="10/2026"):
 
   except Exception as e:
     st.sidebar.error(f"Erro ao carregar dados do banco: {e}")
-    # Fallback de segurança com os valores do extrato (10/2026)
-    entradas = 11734.59
-    gastos_comuns = 5337.45
 
   return entradas, gastos_comuns
 
 
-# --- EXECUÇÃO PRINCIPAL ---
-competencia_alvo = "10/2026"
 entradas, gastos_comuns = buscar_dados_competencia(competencia_alvo)
 saldo_remanescente = entradas - gastos_comuns
 
