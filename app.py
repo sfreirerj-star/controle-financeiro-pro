@@ -510,7 +510,6 @@ else:
 
 st.subheader(f"📤 Débitos (Despesas) da Competência: {competencia_selecionada}")
 
-# Criação e definição segura do DataFrame de débitos do mês
 df_debitos_mes = (
     df_lanc_mes[
         df_lanc_mes["tipo_clean"].isin(["despesa", "débito", "debito", "saida"])
