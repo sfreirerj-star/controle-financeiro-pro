@@ -283,9 +283,6 @@ total_resgates_mes = (
     df_resgates_mes["valor_num"].sum() if not df_resgates_mes.empty and "valor_num" in df_resgates_mes.columns else 0.0
 )
 
-# O impacto real no caixa do mês é a saída para aportes novos descontada dos resgates trazidos de volta
-impacto_investimentos_mes = total_aportes_mes - total_resgates_mes
-
 def calcular_saldo_ate_competencia(df_lan, df_ap, df_res, ordem_alvo):
   try:
     todas_ordens = sorted(
@@ -382,11 +379,13 @@ patrimonio_guardado_mes = calcular_patrimonio_guardado_ate(
     df_aportes, df_resgates, ordem_selecionada
 )
 
+# Saldo Final do Mês unificado e blindado com o extrato real de conta
 saldo_mes = (
     saldo_remanescente_anterior
     + total_receitas_mes
     - total_gastos_mes
-    - impacto_investimentos_mes
+    - total_aportes_mes  # Subtrai o capital que de fato foi investido e saiu da conta no mês
+    + total_resgates_mes # Soma o dinheiro de resgates que voltou para a conta
 )
 
 st.subheader(
