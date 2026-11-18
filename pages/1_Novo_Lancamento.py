@@ -279,7 +279,7 @@ else:
   df_lancamentos["comp_ordem"] = "9999-99"
   df_lancamentos["tipo_clean"] = ""
 
-# Processamento de Aportes da Reserva
+# Processamento de Aportes da Reserva (Lendo apenas de desafio_aportes para evitar duplicidade)
 if not df_aportes.empty and 'data' in df_aportes.columns:
   res_ap = df_aportes['data'].apply(extrair_competencia)
   df_aportes['competencia'] = [x[0] for x in res_ap]
@@ -322,14 +322,8 @@ total_gastos = (
     else 0.0
 )
 
-total_aportes_lanc = (
-    df_lanc_mes[
-        df_lanc_mes["tipo_clean"].isin(["aporte", "investimento"])
-    ]["valor_num"].sum()
-    if not df_lanc_mes.empty
-    else 0.0
-)
-total_aportes_total = total_aportes_mes + total_aportes_lanc
+# Utiliza diretamente o total de aportes limpo da tabela oficial
+total_aportes_total = total_aportes_mes
 
 saldo_anterior = 0.0
 try:
