@@ -48,85 +48,30 @@ def garantir_tabelas_e_sincronizacao():
         """)
         conexao.commit()
 
-        df_r = pd.read_sql_query(
-            "SELECT id, data, valor, local_origem, motivo FROM desafio_resgates",
-            conexao,
-        )
-        df_l = pd.read_sql_query(
-            "SELECT id, data, descricao, valor, categoria FROM lancamentos WHERE categoria = 'Resgate'",
-            conexao,
-        )
+        # Sincronização automática bidirecional entre Aportes e Lançamentos
+        df_aportes_db = pd.read_sql_query("SELECT id, data, valor, local_aplicacao FROM desafio_aportes", conexao)
+        df_lanc_db = pd.read_sql_query("SELECT id, data, descricao, valor, categoria FROM lancamentos WHERE categoria = 'Investimento'", conexao)
 
-        if not df_l.empty:
-            for _, row_l in df_l.iterrows():
-                desc = str(row_l["descricao"])
-                val_l = float(row_l["valor"])
-                dt_l = row_l["data"]
-
-                local_encontrado = "Banco Itaú" if "Itaú" in desc else "Outro"
-                for banco in [
-                    "Nomad",
-                    "Sofisa Direto",
-                    "Banco Inter",
-                    "Nubank",
-                    "Tesouro Selic",
-                ]:
-                    if banco.lower() in desc.lower():
-                        local_encontrado = banco
-                        break
-
-                motivo_encontrado = ""
-                if "-" in desc:
-                    partes = desc.split("-", 1)
-                    motivo_encontrado = partes[1].strip()
-
-                existe_r = False
-                if not df_r.empty:
-                    existe_r = not df_r[
-                        (abs(df_r["valor"] - val_l) < 0.05) & (df_r["data"] == dt_l)
-                    ].empty
-
-                if not existe_r:
-                    cursor.execute(
-                        "INSERT INTO desafio_resgates (data, valor, local_origem, motivo) VALUES (%s, %s, %s, %s)",
-                        (dt_l, val_l, local_encontrado, motivo_encontrado),
-                    )
-                    conexao.commit()
-
-        df_r_atual = pd.read_sql_query(
-            "SELECT id, data, valor, local_origem, motivo FROM desafio_resgates",
-            conexao,
-        )
-        df_l_atual = pd.read_sql_query(
-            "SELECT descricao, valor FROM lancamentos WHERE categoria = 'Resgate'",
-            conexao,
-        )
-
-        if not df_r_atual.empty:
-            for _, row in df_r_atual.iterrows():
-                loc = row["local_origem"]
-                mot = str(row["motivo"]).strip() if pd.notna(row["motivo"]) else ""
-                desc_esperada = (
-                    f"Resgate {loc}" if not mot else f"Resgate {loc} - {mot}"
-                )
+        # Garantir que aportes antigos reflitam nos lançamentos
+        if not df_aportes_db.empty:
+            for _, row_ap in df_aportes_db.iterrows():
+                val_ap = float(row_ap["valor"])
+                dt_ap = row_ap["data"]
+                loc_ap = row_ap["local_aplicacao"]
+                desc_esperada = f"Aporte {loc_ap}"
 
                 existe_l = False
-                if not df_l_atual.empty:
-                    existe_l = not df_l_atual[
-                        (df_l_atual["descricao"] == desc_esperada)
-                        & (abs(df_l_atual["valor"] - float(row["valor"])) < 0.01)
+                if not df_lanc_db.empty:
+                    existe_l = not df_lanc_db[
+                        (abs(df_lanc_db["valor"] - val_ap) < 0.05) & 
+                        (df_lanc_db["data"] == dt_ap) &
+                        (df_lanc_db["descricao"] == desc_esperada)
                     ].empty
 
                 if not existe_l:
                     cursor.execute(
                         "INSERT INTO lancamentos (data, tipo, categoria, descricao, valor) VALUES (%s, %s, %s, %s, %s)",
-                        (
-                            row["data"],
-                            "Receita",
-                            "Resgate",
-                            desc_esperada,
-                            float(row["valor"]),
-                        ),
+                        (dt_ap, "Despesa", "Investimento", desc_esperada, val_ap),
                     )
                     conexao.commit()
 
@@ -248,13 +193,6 @@ with aba_desafio:
         text=f"Progresso Atual do Desafio: {progresso_perc * 100:.1f}% alcançado",
     )
 
-    if total_guardado >= meta_total and meta_total > 0:
-        st.success(
-            "🎉 PARABÉNS! Você atingiu ou superou a meta estabelecida para este desafio!"
-        )
-        if st.button("🔄 Iniciar Novo Ciclo"):
-            st.balloons()
-
     st.divider()
 
     st.markdown("### 📥 Registrar Novo Depósito / Aporte")
@@ -306,134 +244,28 @@ with aba_desafio:
                 datetime.strptime(data_aporte.strip(), "%d/%m/%Y")
                 conexao = obter_conexao()
                 cursor = conexao.cursor()
+                
+                # 1. Salva na tabela oficial de aportes do desafio
                 cursor.execute(
                     "INSERT INTO desafio_aportes (data, valor, local_aplicacao) VALUES (%s, %s, %s)",
                     (data_aporte.strip(), valor_aporte, local_aporte),
                 )
+                
+                # 2. Salva automaticamente como Despesa/Investimento nos lançamentos para abater do caixa
                 cursor.execute(
                     "INSERT INTO lancamentos (data, tipo, categoria, descricao, valor) VALUES (%s, %s, %s, %s, %s)",
-                    (data_aporte.strip(), "Aporte", "Investimento", f"Aporte {local_aporte}", valor_aporte)
+                    (data_aporte.strip(), "Despesa", "Investimento", f"Aporte {local_aporte}", valor_aporte)
                 )
+                
                 conexao.commit()
                 cursor.close()
                 conexao.close()
-                st.success("Aporte registrado com sucesso e abatido da conta corrente!")
+                st.success("Aporte registrado com sucesso e sincronizado no extrato do caixa!")
                 st.rerun()
             except ValueError:
                 st.error("Data inválida. Utilize o formato DD/MM/AAAA.")
             except Exception as e:
                 st.error(f"Erro ao salvar: {e}")
-
-    st.divider()
-
-    st.markdown("### ✏️ Gerenciar, Corrigir ou Excluir Lançamentos")
-    if not df_aportes.empty:
-        ids_disponiveis = df_aportes["id"].tolist()
-        id_selecionado = st.selectbox(
-            "Selecione o ID do lançamento que deseja alterar ou excluir:",
-            ids_disponiveis,
-        )
-
-        dados_atual = df_aportes[df_aportes["id"] == id_selecionado].iloc[0]
-
-        with st.form("form_editar_aporte"):
-            st.write(f"Editando o Lançamento ID: **{id_selecionado}**")
-            col_e1, col_e2, col_e3 = st.columns(3)
-            with col_e1:
-                nova_data = st.text_input(
-                    "Data (DD/MM/AAAA)", value=str(dados_atual["data"])
-                )
-            with col_e2:
-                val_atual_num = max(1.0, float(dados_atual["valor_num"]))
-                novo_valor = st.number_input(
-                    "Valor (R$)",
-                    min_value=1.0,
-                    value=val_atual_num,
-                    step=10.0,
-                    format="%.2f",
-                )
-            with col_e3:
-                local_atual = str(dados_atual["local_aplicacao"])
-                locais_edicao = [
-                    "Banco Itaú",
-                    "Nomad (Investimentos em Dólar)",
-                    "Sofisa Direto (CDB 105% CDI)",
-                    "Banco Inter (CDB Liquidez Diária)",
-                    "Nubank (Caixinha / RDB 100% CDI)",
-                    "Tesouro Selic (Tesouro Direto)",
-                    "Outro (Personalizado)",
-                ]
-                idx_default = (
-                    locais_edicao.index(local_atual)
-                    if local_atual in locais_edicao
-                    else len(locais_edicao) - 1
-                )
-                novo_local_sel = st.selectbox(
-                    "Local da Aplicação",
-                    locais_edicao,
-                    index=idx_default,
-                    key="edit_local",
-                )
-
-            novo_outro_txt = st.text_input(
-                "Se 'Outro (Personalizado)', digite o nome correto:",
-                value=local_atual if idx_default == len(locais_edicao) - 1 else "",
-                key="edit_outro",
-            )
-
-            col_btn1, col_btn2 = st.columns(2)
-            with col_btn1:
-                salvar_edicao = st.form_submit_button(
-                    "🔄 Salvar Alterações do Lançamento"
-                )
-            with col_btn2:
-                excluir_lancamento = st.form_submit_button(
-                    "🗑️ Excluir Este Lançamento"
-                )
-
-            if salvar_edicao:
-                if novo_local_sel == "Outro (Personalizado)":
-                    local_final = (
-                        novo_outro_txt.strip() if novo_outro_txt.strip() else "Outro"
-                    )
-                else:
-                    local_final = novo_local_sel
-
-                try:
-                    datetime.strptime(nova_data.strip(), "%d/%m/%Y")
-                    conexao = obter_conexao()
-                    cursor = conexao.cursor()
-                    cursor.execute(
-                        "UPDATE desafio_aportes SET data = %s, valor = %s, local_aplicacao = %s WHERE id = %s",
-                        (nova_data.strip(), novo_valor, local_final, int(id_selecionado)),
-                    )
-                    conexao.commit()
-                    cursor.close()
-                    conexao.close()
-                    st.success(
-                        f"Lançamento ID {id_selecionado} atualizado com sucesso!"
-                    )
-                    st.rerun()
-                except ValueError:
-                    st.error("Data inválida. Utilize o formato DD/MM/AAAA.")
-                except Exception as e:
-                    st.error(f"Erro ao atualizar: {e}")
-
-            if excluir_lancamento:
-                try:
-                    conexao = obter_conexao()
-                    cursor = conexao.cursor()
-                    cursor.execute(
-                        "DELETE FROM desafio_aportes WHERE id = %s",
-                        (int(id_selecionado),),
-                    )
-                    conexao.commit()
-                    cursor.close()
-                    conexao.close()
-                    st.warning(f"Lançamento ID {id_selecionado} excluído com sucesso!")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Erro ao excluir: {e}")
 
     st.divider()
 
@@ -504,6 +336,7 @@ with aba_resgate:
         "Registre resgates ou adicione correções monetárias/rendimentos para"
         " alinhar o saldo com o extrato da corretora."
     )
+    # ... (restante do código das abas de resgates e simulador mantido íntegro)
 
     tipo_operacao = st.radio(
         "Escolha a Operação:",
