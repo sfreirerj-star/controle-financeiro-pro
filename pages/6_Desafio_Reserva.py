@@ -46,6 +46,16 @@ def garantir_tabelas():
                 motivo TEXT
             )
         """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS lancamentos (
+                id SERIAL PRIMARY KEY,
+                data TEXT NOT NULL,
+                tipo TEXT NOT NULL,
+                categoria TEXT NOT NULL,
+                descricao TEXT NOT NULL,
+                valor NUMERIC(10,2) NOT NULL
+            )
+        """)
         conexao.commit()
         cursor.close()
         conexao.close()
@@ -112,7 +122,7 @@ with aba_desafio:
     try:
         conexao = obter_conexao()
         df_aportes = pd.read_sql_query(
-            "SELECT id, data, valor, local_aplicacao FROM desafio_aportes ORDER BY id DESC",
+            "SELECT id, data, valor, local_aplicacao FROM desafio_aportes",
             conexao,
         )
         df_resgates = pd.read_sql_query(
@@ -120,6 +130,11 @@ with aba_desafio:
             conexao,
         )
         conexao.close()
+        
+        # Ordenação cronológica automática dos aportes por data (do mais recente para o mais antigo)
+        if not df_aportes.empty:
+            df_aportes['data_dt'] = pd.to_datetime(df_aportes['data'], format='%d/%m/%Y', errors='coerce')
+            df_aportes = df_aportes.sort_values(by=['data_dt', 'id'], ascending=[False, False]).drop(columns=['data_dt'])
     except Exception:
         df_aportes = pd.DataFrame(columns=["id", "data", "valor", "local_aplicacao"])
         df_resgates = pd.DataFrame(
@@ -217,16 +232,22 @@ with aba_desafio:
                 conexao = obter_conexao()
                 cursor = conexao.cursor()
                 
-                # Salva exclusivamente na tabela oficial de aportes do desafio
+                # 1. Salva na tabela oficial de aportes do desafio
                 cursor.execute(
                     "INSERT INTO desafio_aportes (data, valor, local_aplicacao) VALUES (%s, %s, %s)",
                     (data_aporte.strip(), valor_aporte, local_aporte),
                 )
                 
+                # 2. Salva na tabela geral de lançamentos para abater do caixa do mês
+                cursor.execute(
+                    "INSERT INTO lancamentos (data, tipo, categoria, descricao, valor) VALUES (%s, %s, %s, %s, %s)",
+                    (data_aporte.strip(), "Aporte", "Investimento", f"Aporte Desafio - {local_aporte}", float(valor_aporte))
+                )
+                
                 conexao.commit()
                 cursor.close()
                 conexao.close()
-                st.success("Aporte registrado com sucesso no Desafio de Reserva!")
+                st.success("Aporte registrado com sucesso no Desafio e integrado ao fluxo de caixa!")
                 st.rerun()
             except ValueError:
                 st.error("Data inválida. Utilize o formato DD/MM/AAAA.")
