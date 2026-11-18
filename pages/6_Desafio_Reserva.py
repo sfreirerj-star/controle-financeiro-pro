@@ -24,7 +24,7 @@ except ImportError:
 def obter_conexao():
     return psycopg2.connect(st.secrets["DATABASE_URL"])
 
-def garantir_tabelas_e_sincronizacao():
+def garantir_tabelas():
     try:
         conexao = obter_conexao()
         cursor = conexao.cursor()
@@ -47,40 +47,12 @@ def garantir_tabelas_e_sincronizacao():
             )
         """)
         conexao.commit()
-
-        # Sincronização automática bidirecional entre Aportes e Lançamentos
-        df_aportes_db = pd.read_sql_query("SELECT id, data, valor, local_aplicacao FROM desafio_aportes", conexao)
-        df_lanc_db = pd.read_sql_query("SELECT id, data, descricao, valor, categoria FROM lancamentos WHERE categoria = 'Investimento'", conexao)
-
-        # Garantir que aportes antigos reflitam nos lançamentos
-        if not df_aportes_db.empty:
-            for _, row_ap in df_aportes_db.iterrows():
-                val_ap = float(row_ap["valor"])
-                dt_ap = row_ap["data"]
-                loc_ap = row_ap["local_aplicacao"]
-                desc_esperada = f"Aporte {loc_ap}"
-
-                existe_l = False
-                if not df_lanc_db.empty:
-                    existe_l = not df_lanc_db[
-                        (abs(df_lanc_db["valor"] - val_ap) < 0.05) & 
-                        (df_lanc_db["data"] == dt_ap) &
-                        (df_lanc_db["descricao"] == desc_esperada)
-                    ].empty
-
-                if not existe_l:
-                    cursor.execute(
-                        "INSERT INTO lancamentos (data, tipo, categoria, descricao, valor) VALUES (%s, %s, %s, %s, %s)",
-                        (dt_ap, "Despesa", "Investimento", desc_esperada, val_ap),
-                    )
-                    conexao.commit()
-
         cursor.close()
         conexao.close()
     except Exception as e:
-        print(f"Erro na sincronização: {e}")
+        print(f"Erro ao garantir tabelas: {e}")
 
-garantir_tabelas_e_sincronizacao()
+garantir_tabelas()
 
 st.title("💰 Controle Financeiro — Painel do Marcelo")
 st.subheader("🎯 Desafio Personalizado & Simulador de Antecipação")
@@ -245,22 +217,16 @@ with aba_desafio:
                 conexao = obter_conexao()
                 cursor = conexao.cursor()
                 
-                # 1. Salva na tabela oficial de aportes do desafio
+                # Salva exclusivamente na tabela oficial de aportes do desafio
                 cursor.execute(
                     "INSERT INTO desafio_aportes (data, valor, local_aplicacao) VALUES (%s, %s, %s)",
                     (data_aporte.strip(), valor_aporte, local_aporte),
                 )
                 
-                # 2. Salva automaticamente como Despesa/Investimento nos lançamentos para abater do caixa
-                cursor.execute(
-                    "INSERT INTO lancamentos (data, tipo, categoria, descricao, valor) VALUES (%s, %s, %s, %s, %s)",
-                    (data_aporte.strip(), "Despesa", "Investimento", f"Aporte {local_aporte}", valor_aporte)
-                )
-                
                 conexao.commit()
                 cursor.close()
                 conexao.close()
-                st.success("Aporte registrado com sucesso e sincronizado no extrato do caixa!")
+                st.success("Aporte registrado com sucesso no Desafio de Reserva!")
                 st.rerun()
             except ValueError:
                 st.error("Data inválida. Utilize o formato DD/MM/AAAA.")
@@ -336,7 +302,6 @@ with aba_resgate:
         "Registre resgates ou adicione correções monetárias/rendimentos para"
         " alinhar o saldo com o extrato da corretora."
     )
-    # ... (restante do código das abas de resgates e simulador mantido íntegro)
 
     tipo_operacao = st.radio(
         "Escolha a Operação:",
@@ -411,22 +376,6 @@ with aba_resgate:
                                 valor_resgate,
                                 origem_final,
                                 motivo_resgate.strip(),
-                            ),
-                        )
-
-                        desc_lancamento = (
-                            f"Resgate {origem_final}"
-                            if not motivo_resgate.strip()
-                            else f"Resgate {origem_final} - {motivo_resgate.strip()}"
-                        )
-                        cursor.execute(
-                            "INSERT INTO lancamentos (data, tipo, categoria, descricao, valor) VALUES (%s, %s, %s, %s, %s)",
-                            (
-                                data_resgate.strip(),
-                                "Receita",
-                                "Resgate",
-                                desc_lancamento,
-                                valor_resgate,
                             ),
                         )
 
@@ -528,26 +477,6 @@ with aba_resgate:
             try:
                 conexao = obter_conexao()
                 cursor = conexao.cursor()
-
-                cursor.execute(
-                    "SELECT data, valor, local_origem, motivo FROM desafio_resgates WHERE id = %s",
-                    (int(id_resgate_excluir),),
-                )
-                row_del = cursor.fetchone()
-
-                if row_del:
-                    dt_del, val_del, loc_del, mot_del = row_del
-                    mot_del_str = str(mot_del).strip() if mot_del else ""
-                    desc_del = (
-                        f"Resgate {loc_del}"
-                        if not mot_del_str
-                        else f"Resgate {loc_del} - {mot_del_str}"
-                    )
-
-                    cursor.execute(
-                        "DELETE FROM lancamentos WHERE categoria = 'Resgate' AND descricao = %s AND valor = %s",
-                        (desc_del, float(val_del)),
-                    )
 
                 cursor.execute(
                     "DELETE FROM desafio_resgates WHERE id = %s",
